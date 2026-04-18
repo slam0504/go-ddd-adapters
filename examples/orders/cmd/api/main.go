@@ -6,28 +6,25 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/slam0504/go-ddd-core/application/command"
 	"github.com/slam0504/go-ddd-core/bootstrap"
+	"github.com/slam0504/go-ddd-core/eventbus"
 	"github.com/slam0504/go-ddd-core/ports/logger"
 
 	"github.com/slam0504/go-ddd-adapters/eventbus/kafka"
 	apporder "github.com/slam0504/go-ddd-adapters/examples/orders/application/order"
+	"github.com/slam0504/go-ddd-adapters/examples/orders/cmd/internal/runtime"
 	orderdom "github.com/slam0504/go-ddd-adapters/examples/orders/domain/order"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/eventcodec"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/memrepo"
-	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/otelexp"
 	slogger "github.com/slam0504/go-ddd-adapters/logger/slogger"
-	otelad "github.com/slam0504/go-ddd-adapters/observability/otel"
 )
 
 const (
@@ -45,69 +42,53 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-
-	brokers := strings.Split(os.Getenv("KAFKA_BROKERS"), ",")
-	if len(brokers) == 0 || brokers[0] == "" {
-		return errors.New("KAFKA_BROKERS is required")
-	}
-	httpAddr := envOr("HTTP_ADDR", defaultHTTPAddr)
-	otlpEndpoint := os.Getenv("OTEL_OTLP_ENDPOINT")
-
 	log := slogger.New(slogger.Config{Level: slog.LevelInfo}).With(logger.F("service", serviceName))
 
-	prov, err := buildOTelProvider(ctx, otlpEndpoint)
+	brokers, err := runtime.BrokersFromEnv()
 	if err != nil {
-		return fmt.Errorf("build otel: %w", err)
+		return err
 	}
 
+	prov, err := runtime.OTelProvider(ctx, serviceName, os.Getenv("OTEL_OTLP_ENDPOINT"))
+	if err != nil {
+		return err
+	}
+
+	pub, err := newPublisher(brokers)
+	if err != nil {
+		return err
+	}
+
+	cmdBus := registerCommands(memrepo.NewOrderRepository(), pub)
+
+	app := bootstrap.New(bootstrap.Options{Logger: log})
+	app.Use(
+		runtime.OTelModule(prov),
+		closer("kafka-publisher", pub.Close),
+		runtime.HTTPModule(runtime.EnvOr("HTTP_ADDR", defaultHTTPAddr), routes(cmdBus, log), log),
+	)
+	return app.Run(ctx)
+}
+
+func newPublisher(brokers []string) (*kafka.Publisher, error) {
 	pub, err := kafka.NewPublisher(kafka.PublisherConfig{
 		Brokers:              brokers,
 		Codec:                eventcodec.New(),
 		PartitionByAggregate: true,
 	})
 	if err != nil {
-		return fmt.Errorf("build kafka publisher: %w", err)
+		return nil, fmt.Errorf("kafka publisher: %w", err)
 	}
+	return pub, nil
+}
 
-	repo := memrepo.NewOrderRepository()
-	cmdBus := command.NewInMemoryBus()
+func registerCommands(repo *memrepo.OrderRepository, pub eventbus.Publisher) *command.InMemoryBus {
+	bus := command.NewInMemoryBus()
 	command.Register[apporder.PlaceOrderCommand, apporder.PlaceOrderResult](
-		cmdBus,
+		bus,
 		apporder.NewPlaceOrderHandler(repo, pub, topicPlaced, uuid.NewString),
 	)
-
-	server := &http.Server{
-		Addr:              httpAddr,
-		Handler:           routes(cmdBus, log),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	app := bootstrap.New(bootstrap.Options{Logger: log})
-	app.Use(
-		bootstrap.ModuleFunc{
-			ModuleName: "otel",
-			StopFn:     prov.Shutdown,
-		},
-		bootstrap.ModuleFunc{
-			ModuleName: "kafka-publisher",
-			StopFn:     func(_ context.Context) error { return pub.Close() },
-		},
-		bootstrap.ModuleFunc{
-			ModuleName: "http",
-			StartFn: func(ctx context.Context, _ *bootstrap.App) error {
-				log.Log(ctx, logger.LevelInfo, "http listening", logger.F("addr", httpAddr))
-				go func() {
-					if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-						log.Log(ctx, logger.LevelError, "http serve error", logger.F("err", err.Error()))
-					}
-				}()
-				return nil
-			},
-			StopFn: server.Shutdown,
-		},
-	)
-
-	return app.Run(ctx)
+	return bus
 }
 
 func routes(cmdBus *command.InMemoryBus, log logger.Logger) http.Handler {
@@ -147,21 +128,9 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func buildOTelProvider(ctx context.Context, otlpEndpoint string) (*otelad.Provider, error) {
-	cfg := otelad.Config{ServiceName: serviceName}
-	if otlpEndpoint != "" {
-		exp, err := otelexp.New(ctx, otlpEndpoint)
-		if err != nil {
-			return nil, err
-		}
-		cfg.SpanExporter = exp
+func closer(name string, fn func() error) bootstrap.ModuleFunc {
+	return bootstrap.ModuleFunc{
+		ModuleName: name,
+		StopFn:     func(_ context.Context) error { return fn() },
 	}
-	return otelad.New(ctx, cfg)
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

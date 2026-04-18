@@ -5,11 +5,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -20,12 +18,11 @@ import (
 
 	"github.com/slam0504/go-ddd-adapters/eventbus/kafka"
 	apporder "github.com/slam0504/go-ddd-adapters/examples/orders/application/order"
+	"github.com/slam0504/go-ddd-adapters/examples/orders/cmd/internal/runtime"
 	orderdom "github.com/slam0504/go-ddd-adapters/examples/orders/domain/order"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/eventcodec"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/memrepo"
-	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/otelexp"
 	slogger "github.com/slam0504/go-ddd-adapters/logger/slogger"
-	otelad "github.com/slam0504/go-ddd-adapters/observability/otel"
 )
 
 const (
@@ -45,53 +42,39 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-
-	brokers := strings.Split(os.Getenv("KAFKA_BROKERS"), ",")
-	if len(brokers) == 0 || brokers[0] == "" {
-		return errors.New("KAFKA_BROKERS is required")
-	}
-	otlpEndpoint := os.Getenv("OTEL_OTLP_ENDPOINT")
-
 	log := slogger.New(slogger.Config{Level: slog.LevelInfo}).With(logger.F("service", serviceName))
 
-	prov, err := buildOTelProvider(ctx, otlpEndpoint)
+	brokers, err := runtime.BrokersFromEnv()
 	if err != nil {
-		return fmt.Errorf("build otel: %w", err)
+		return err
+	}
+
+	prov, err := runtime.OTelProvider(ctx, serviceName, os.Getenv("OTEL_OTLP_ENDPOINT"))
+	if err != nil {
+		return err
 	}
 
 	codec := eventcodec.New()
-	pub, err := kafka.NewPublisher(kafka.PublisherConfig{
-		Brokers:              brokers,
-		Codec:                codec,
-		PartitionByAggregate: true,
-	})
+	pub, err := newPublisher(brokers, codec)
 	if err != nil {
-		return fmt.Errorf("build kafka publisher: %w", err)
+		return err
 	}
-	sub, err := kafka.NewSubscriber(kafka.SubscriberConfig{
-		Brokers:       brokers,
-		ConsumerGroup: consumerGroup,
-		Codec:         codec,
-	})
+	sub, err := newSubscriber(brokers, codec)
 	if err != nil {
-		return fmt.Errorf("build kafka subscriber: %w", err)
+		return err
 	}
 
 	repo := memrepo.NewOrderRepository()
-	cmdBus := command.NewInMemoryBus()
-	command.Register[apporder.ShipOrderCommand, apporder.ShipOrderResult](
-		cmdBus,
-		apporder.NewShipOrderHandler(repo, pub, topicShipped, uuid.NewString),
-	)
+	cmdBus := registerCommands(repo, pub)
 
 	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
+	handle := func(env eventbus.Envelope) {
+		handleOrderPlaced(consumerCtx, log, cmdBus, repo, env)
+	}
 
 	app := bootstrap.New(bootstrap.Options{Logger: log})
 	app.Use(
-		bootstrap.ModuleFunc{
-			ModuleName: "otel",
-			StopFn:     prov.Shutdown,
-		},
+		runtime.OTelModule(prov),
 		bootstrap.ModuleFunc{
 			ModuleName: "kafka-pubsub",
 			StopFn: func(_ context.Context) error {
@@ -100,79 +83,86 @@ func run() error {
 				return pub.Close()
 			},
 		},
-		bootstrap.ModuleFunc{
-			ModuleName: "consumer",
-			StartFn: func(_ context.Context, _ *bootstrap.App) error {
-				ch, err := sub.Subscribe(consumerCtx, topicPlaced)
-				if err != nil {
-					return fmt.Errorf("subscribe %s: %w", topicPlaced, err)
-				}
-				go consume(consumerCtx, log, cmdBus, repo, ch)
-				log.Log(consumerCtx, logger.LevelInfo, "consumer started", logger.F("topic", topicPlaced))
-				return nil
-			},
-		},
+		runtime.ConsumerModule(consumerCtx, sub, topicPlaced, log, nil, handle),
 	)
-
 	return app.Run(ctx)
 }
 
-func consume(
+func newPublisher(brokers []string, codec eventbus.Codec) (*kafka.Publisher, error) {
+	pub, err := kafka.NewPublisher(kafka.PublisherConfig{
+		Brokers:              brokers,
+		Codec:                codec,
+		PartitionByAggregate: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("kafka publisher: %w", err)
+	}
+	return pub, nil
+}
+
+func newSubscriber(brokers []string, codec eventbus.Codec) (*kafka.Subscriber, error) {
+	sub, err := kafka.NewSubscriber(kafka.SubscriberConfig{
+		Brokers:       brokers,
+		ConsumerGroup: consumerGroup,
+		Codec:         codec,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("kafka subscriber: %w", err)
+	}
+	return sub, nil
+}
+
+func registerCommands(repo *memrepo.OrderRepository, pub eventbus.Publisher) *command.InMemoryBus {
+	bus := command.NewInMemoryBus()
+	command.Register[apporder.ShipOrderCommand, apporder.ShipOrderResult](
+		bus,
+		apporder.NewShipOrderHandler(repo, pub, topicShipped, uuid.NewString),
+	)
+	return bus
+}
+
+func handleOrderPlaced(
 	ctx context.Context,
 	log logger.Logger,
 	cmdBus *command.InMemoryBus,
 	repo orderdom.Repository,
-	ch <-chan eventbus.Envelope,
+	env eventbus.Envelope,
 ) {
-	for env := range ch {
-		placed, ok := env.Event.(*orderdom.OrderPlaced)
-		if !ok {
-			log.Log(ctx, logger.LevelWarn, "unexpected event type", logger.F("event_name", env.Name))
-			env.Nack()
-			continue
-		}
-
-		// Hydrate the aggregate into the worker's local repo so the ship
-		// handler can FindByID it. This is the example's per-process
-		// in-mem workaround; with a shared DB the worker would just load.
-		o := orderdom.Hydrate(
-			orderdom.ID(placed.AggregateID()),
-			placed.CustomerID,
-			orderdom.StatusPlaced,
-			placed.Version(),
-			placed.TotalCents,
-		)
-		if err := repo.Save(ctx, o); err != nil {
-			log.Log(ctx, logger.LevelError, "hydrate save failed",
-				logger.F("order_id", placed.AggregateID()), logger.F("err", err.Error()))
-			env.Nack()
-			continue
-		}
-
-		_, err := cmdBus.Dispatch(ctx, apporder.ShipOrderCommand{
-			OrderID: placed.AggregateID(),
-			Carrier: defaultCarrier,
-		})
-		if err != nil {
-			log.Log(ctx, logger.LevelError, "ship dispatch failed",
-				logger.F("order_id", placed.AggregateID()), logger.F("err", err.Error()))
-			env.Nack()
-			continue
-		}
-		log.Log(ctx, logger.LevelInfo, "shipped",
-			logger.F("order_id", placed.AggregateID()), logger.F("carrier", defaultCarrier))
-		env.Ack()
+	placed, ok := env.Event.(*orderdom.OrderPlaced)
+	if !ok {
+		log.Log(ctx, logger.LevelWarn, "unexpected event type", logger.F("event_name", env.Name))
+		env.Nack()
+		return
 	}
-}
 
-func buildOTelProvider(ctx context.Context, otlpEndpoint string) (*otelad.Provider, error) {
-	cfg := otelad.Config{ServiceName: serviceName}
-	if otlpEndpoint != "" {
-		exp, err := otelexp.New(ctx, otlpEndpoint)
-		if err != nil {
-			return nil, err
-		}
-		cfg.SpanExporter = exp
+	// Hydrate the aggregate into the worker's local repo so the ship
+	// handler can FindByID it. Per-process in-mem workaround; goes away
+	// with a shared DB.
+	o := orderdom.Hydrate(
+		orderdom.ID(placed.AggregateID()),
+		placed.CustomerID,
+		orderdom.StatusPlaced,
+		placed.Version(),
+		placed.TotalCents,
+	)
+	if err := repo.Save(ctx, o); err != nil {
+		log.Log(ctx, logger.LevelError, "hydrate save failed",
+			logger.F("order_id", placed.AggregateID()), logger.F("err", err.Error()))
+		env.Nack()
+		return
 	}
-	return otelad.New(ctx, cfg)
+
+	if _, err := cmdBus.Dispatch(ctx, apporder.ShipOrderCommand{
+		OrderID: placed.AggregateID(),
+		Carrier: defaultCarrier,
+	}); err != nil {
+		log.Log(ctx, logger.LevelError, "ship dispatch failed",
+			logger.F("order_id", placed.AggregateID()), logger.F("err", err.Error()))
+		env.Nack()
+		return
+	}
+
+	log.Log(ctx, logger.LevelInfo, "shipped",
+		logger.F("order_id", placed.AggregateID()), logger.F("carrier", defaultCarrier))
+	env.Ack()
 }
