@@ -1,0 +1,85 @@
+# Manual-exploration compose for the orders example.
+#   docker compose up --build
+# Then:
+#   curl -X POST localhost:8080/orders -H 'content-type: application/json' \
+#        -d '{"customer_id":"alice","items":[{"sku":"A","quantity":2,"price_cents":499}]}'
+#   curl localhost:8081/orders/<order_id>
+#   open http://localhost:16686  (Jaeger UI)
+
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # UI
+      - "4317:4317"    # OTLP/gRPC
+
+  orders-api:
+    build:
+      context: ../..
+      dockerfile: examples/orders/Dockerfile
+    command: ["/orders-api"]
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      OTEL_OTLP_ENDPOINT: jaeger:4317
+      HTTP_ADDR: ":8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    ports:
+      - "8080:8080"
+
+  orders-worker:
+    build:
+      context: ../..
+      dockerfile: examples/orders/Dockerfile
+    command: ["/orders-worker"]
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      OTEL_OTLP_ENDPOINT: jaeger:4317
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+
+  orders-reader:
+    build:
+      context: ../..
+      dockerfile: examples/orders/Dockerfile
+    command: ["/orders-reader"]
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      OTEL_OTLP_ENDPOINT: jaeger:4317
+      HTTP_ADDR: ":8081"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    ports:
+      - "8081:8081"
