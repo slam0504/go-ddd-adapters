@@ -56,6 +56,12 @@ func NewSubscriber(cfg SubscriberConfig) (*Subscriber, error) {
 	saramaCfg := cfg.SaramaConfig
 	if saramaCfg == nil {
 		saramaCfg = wmkafka.DefaultSaramaSubscriberConfig()
+		// Read from the start of the topic when there is no committed
+		// offset. watermill-kafka's default leaves this at OffsetNewest,
+		// which causes a slow-joining consumer group to miss messages
+		// that were published before the assignment landed — surprising
+		// in tests and in cold-start production scenarios alike.
+		saramaCfg.Consumer.Offsets.Initial = sarama.OffsetOldest
 	}
 
 	sub, err := wmkafka.NewSubscriber(wmkafka.SubscriberConfig{
