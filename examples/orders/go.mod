@@ -7,7 +7,7 @@ replace github.com/slam0504/go-ddd-adapters => ../..
 require (
 	github.com/google/uuid v1.6.0
 	github.com/slam0504/go-ddd-adapters v0.0.0-00010101000000-000000000000
-	github.com/slam0504/go-ddd-core v0.1.0
+	github.com/slam0504/go-ddd-core v0.2.1
 	github.com/testcontainers/testcontainers-go/modules/redpanda v0.42.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.32.0
 	go.opentelemetry.io/otel/sdk v1.35.0
