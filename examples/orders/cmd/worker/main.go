@@ -23,6 +23,7 @@ import (
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/eventcodec"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/memrepo"
 	slogger "github.com/slam0504/go-ddd-adapters/logger/slogger"
+	otelad "github.com/slam0504/go-ddd-adapters/observability/otel"
 )
 
 const (
@@ -67,23 +68,19 @@ func run() error {
 	repo := memrepo.NewOrderRepository()
 	cmdBus := registerCommands(repo, pub)
 
-	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
-	handle := func(env eventbus.Envelope) {
-		handleOrderPlaced(consumerCtx, log, cmdBus, repo, env)
+	handle := func(hctx context.Context, env eventbus.Envelope) error {
+		return handleOrderPlaced(hctx, log, cmdBus, repo, env)
 	}
 
+	// Stop order (reverse Use): ConsumerModule drains in-flight handlers
+	// → SubscriberModule closes the watermill subscriber → PublisherModule
+	// closes Publisher → otelad flushes + shuts down.
 	app := bootstrap.New(bootstrap.Options{Logger: log})
 	app.Use(
-		runtime.OTelModule(prov),
-		bootstrap.ModuleFunc{
-			ModuleName: "kafka-pubsub",
-			StopFn: func(_ context.Context) error {
-				cancelConsumer()
-				_ = sub.Close()
-				return pub.Close()
-			},
-		},
-		runtime.ConsumerModule(consumerCtx, sub, topicPlaced, log, nil, handle),
+		otelad.Module(prov),
+		kafka.PublisherModule(pub),
+		kafka.SubscriberModule(sub),
+		kafka.ConsumerModule(sub, topicPlaced, log, handle),
 	)
 	return app.Run(ctx)
 }
@@ -127,12 +124,10 @@ func handleOrderPlaced(
 	cmdBus *command.InMemoryBus,
 	repo orderdom.Repository,
 	env eventbus.Envelope,
-) {
+) error {
 	placed, ok := env.Event.(*orderdom.OrderPlaced)
 	if !ok {
-		log.Log(ctx, logger.LevelWarn, "unexpected event type", logger.F("event_name", env.Name))
-		env.Nack()
-		return
+		return fmt.Errorf("unexpected event type: %s", env.Name)
 	}
 
 	// Hydrate the aggregate into the worker's local repo so the ship
@@ -146,23 +141,17 @@ func handleOrderPlaced(
 		placed.TotalCents,
 	)
 	if err := repo.Save(ctx, o); err != nil {
-		log.Log(ctx, logger.LevelError, "hydrate save failed",
-			logger.F("order_id", placed.AggregateID()), logger.F("err", err.Error()))
-		env.Nack()
-		return
+		return fmt.Errorf("hydrate save order=%s: %w", placed.AggregateID(), err)
 	}
 
 	if _, err := cmdBus.Dispatch(ctx, apporder.ShipOrderCommand{
 		OrderID: placed.AggregateID(),
 		Carrier: defaultCarrier,
 	}); err != nil {
-		log.Log(ctx, logger.LevelError, "ship dispatch failed",
-			logger.F("order_id", placed.AggregateID()), logger.F("err", err.Error()))
-		env.Nack()
-		return
+		return fmt.Errorf("ship dispatch order=%s: %w", placed.AggregateID(), err)
 	}
 
 	log.Log(ctx, logger.LevelInfo, "shipped",
 		logger.F("order_id", placed.AggregateID()), logger.F("carrier", defaultCarrier))
-	env.Ack()
+	return nil
 }

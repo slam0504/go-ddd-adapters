@@ -25,6 +25,7 @@ import (
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/eventcodec"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/memrepo"
 	slogger "github.com/slam0504/go-ddd-adapters/logger/slogger"
+	otelad "github.com/slam0504/go-ddd-adapters/observability/otel"
 )
 
 const (
@@ -63,8 +64,8 @@ func run() error {
 
 	app := bootstrap.New(bootstrap.Options{Logger: log})
 	app.Use(
-		runtime.OTelModule(prov),
-		closer("kafka-publisher", pub.Close),
+		otelad.Module(prov),
+		kafka.PublisherModule(pub),
 		runtime.HTTPModule(runtime.EnvOr("HTTP_ADDR", defaultHTTPAddr), routes(cmdBus, log), log),
 	)
 	return app.Run(ctx)
@@ -128,9 +129,3 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func closer(name string, fn func() error) bootstrap.ModuleFunc {
-	return bootstrap.ModuleFunc{
-		ModuleName: name,
-		StopFn:     func(_ context.Context) error { return fn() },
-	}
-}

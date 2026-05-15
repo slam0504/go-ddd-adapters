@@ -13,6 +13,13 @@ The example is a separate Go module (`go.mod` here) so its dev-only deps
 (testcontainers, otlptracegrpc, gRPC) do not pollute the adapter root
 module that downstream library users import.
 
+The example's `go.mod` pins a newer Go directive (`go 1.25.0`) than the
+adapter root (`go 1.24`) because transitive deps used only by the
+example (testcontainers-go, otlptracegrpc) require Go 1.25. Downstream
+consumers of the adapter root are unaffected — they get the `go 1.24`
+floor. This divergence is preserved deliberately; running `go mod tidy`
+in `examples/orders` will keep it on 1.25 as long as those deps remain.
+
 ## Topology
 
 ```
