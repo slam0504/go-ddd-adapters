@@ -48,18 +48,63 @@ func SubscriberModule(s *Subscriber) bootstrap.ModuleFunc {
 //
 // Register ConsumerModule AFTER SubscriberModule so the stop order is
 // drain-then-close. For multiple topics sharing a Subscriber, prefer
-// [ConsumerGroup] which constructs one drainable module per topic.
+// [ConsumerGroup] which fans cancel out to all topics in one shot.
+//
+// sub is typed as the [eventbus.Subscriber] port so tests and alternate
+// backends can substitute without depending on the kafka concrete type;
+// the kafka *Subscriber already satisfies it.
 func ConsumerModule(
-	sub *Subscriber,
+	sub eventbus.Subscriber,
 	topic string,
 	log logger.Logger,
 	handle func(ctx context.Context, env eventbus.Envelope) error,
 ) bootstrap.ModuleFunc {
-	name := "kafka-consumer:" + topic
-	// cancel and wg are written in StartFn and read in StopFn. Safe
-	// without explicit synchronization: bootstrap.App invokes Start
-	// serially and only invokes Stop after Start has returned, so the
-	// orchestrator establishes the necessary happens-before edge.
+	return newConsumerLifecycle(sub, []string{topic}, log, handle, "kafka-consumer:"+topic)
+}
+
+// ConsumerGroup subscribes to multiple topics under a single bootstrap
+// module so that Stop cancels and drains all topics concurrently. This
+// matters because bootstrap.Lifecycle invokes module Stop hooks serially
+// in reverse-registration order — modeling a group as N separate modules
+// would force their Stop hooks to run one after another, so a slow drain
+// on topic N would block the cancel signal for topics 1..N-1 entirely.
+//
+// Typical use:
+//
+//	app.Use(kafka.SubscriberModule(sub))
+//	app.Use(kafka.ConsumerGroup(sub, []string{"a", "b"}, log, apply))
+//
+// All topics share one consumer ctx and one WaitGroup. Stop calls cancel()
+// once (so every topic sees ctx.Done() at the same moment), then waits on
+// the WaitGroup, bounded by the bootstrap shutdown ctx.
+//
+// If any topic's Subscribe fails during Start, already-subscribed topics
+// are torn down (cancel + drain) before the error propagates, so partial
+// startup does not leak goroutines.
+func ConsumerGroup(
+	sub eventbus.Subscriber,
+	topics []string,
+	log logger.Logger,
+	handle func(ctx context.Context, env eventbus.Envelope) error,
+) bootstrap.ModuleFunc {
+	return newConsumerLifecycle(sub, topics, log, handle, "kafka-consumer-group")
+}
+
+// newConsumerLifecycle is the shared implementation behind ConsumerModule
+// (one topic) and ConsumerGroup (many topics). All topics in topics share
+// one consumer ctx + one WaitGroup so Stop fans cancel out atomically.
+//
+// cancel and wg are written in StartFn and read in StopFn. Safe without
+// explicit synchronization: bootstrap.App invokes Start serially and
+// only invokes Stop after Start has returned, so the orchestrator
+// establishes the necessary happens-before edge.
+func newConsumerLifecycle(
+	sub eventbus.Subscriber,
+	topics []string,
+	log logger.Logger,
+	handle func(ctx context.Context, env eventbus.Envelope) error,
+	name string,
+) bootstrap.ModuleFunc {
 	var (
 		cancel context.CancelFunc
 		wg     sync.WaitGroup
@@ -69,19 +114,23 @@ func ConsumerModule(
 		StartFn: func(startCtx context.Context, _ *bootstrap.App) error {
 			consumerCtx, c := context.WithCancel(context.WithoutCancel(startCtx))
 			cancel = c
-			ch, err := sub.Subscribe(consumerCtx, topic)
-			if err != nil {
-				cancel()
-				return fmt.Errorf("subscribe %s: %w", topic, err)
-			}
-			log.Log(consumerCtx, logger.LevelInfo, "consumer started", logger.F("topic", topic))
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for env := range ch {
-					processEnvelope(consumerCtx, log, name, handle, env)
+			for _, topic := range topics {
+				ch, err := sub.Subscribe(consumerCtx, topic)
+				if err != nil {
+					cancel()
+					wg.Wait()
+					return fmt.Errorf("subscribe %s: %w", topic, err)
 				}
-			}()
+				log.Log(consumerCtx, logger.LevelInfo, "consumer started", logger.F("topic", topic))
+				wg.Add(1)
+				where := "kafka-consumer:" + topic
+				go func() {
+					defer wg.Done()
+					for env := range ch {
+						processEnvelope(consumerCtx, log, where, handle, env)
+					}
+				}()
+			}
 			return nil
 		},
 		StopFn: func(stopCtx context.Context) error {
@@ -98,32 +147,10 @@ func ConsumerModule(
 			case <-done:
 				return nil
 			case <-stopCtx.Done():
-				return fmt.Errorf("consumer %s drain: %w", topic, stopCtx.Err())
+				return fmt.Errorf("consumer %s drain: %w", name, stopCtx.Err())
 			}
 		},
 	}
-}
-
-// ConsumerGroup constructs one [ConsumerModule] per topic, all sharing
-// the same Subscriber and handle. Each module drains independently on
-// Stop, so a slow topic does not block the others' cancel() phase (only
-// their joint Wait phase, capped by the bootstrap shutdown timeout).
-//
-// Typical use:
-//
-//	app.Use(kafka.SubscriberModule(sub))
-//	app.Use(kafka.ConsumerGroup(sub, []string{"a", "b"}, log, apply)...)
-func ConsumerGroup(
-	sub *Subscriber,
-	topics []string,
-	log logger.Logger,
-	handle func(ctx context.Context, env eventbus.Envelope) error,
-) []bootstrap.Module {
-	out := make([]bootstrap.Module, 0, len(topics))
-	for _, t := range topics {
-		out = append(out, ConsumerModule(sub, t, log, handle))
-	}
-	return out
 }
 
 // processEnvelope runs one handle invocation with panic recovery and

@@ -76,7 +76,7 @@ func run() error {
 		otelad.Module(prov),
 		kafka.SubscriberModule(sub),
 	)
-	app.Use(kafka.ConsumerGroup(sub, []string{topicPlaced, topicShipped}, log, apply)...)
+	app.Use(kafka.ConsumerGroup(sub, []string{topicPlaced, topicShipped}, log, apply))
 	app.Use(runtime.HTTPModule(runtime.EnvOr("HTTP_ADDR", defaultHTTPAddr), routes(qryBus, log), log))
 	return app.Run(ctx)
 }
