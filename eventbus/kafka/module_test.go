@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"sync"
 	"testing"
 	"time"
 
@@ -84,31 +83,38 @@ func TestProcessEnvelope_PanicIsRecoveredAndNacked(t *testing.T) {
 	}
 }
 
+var errSubscribeBoom = errors.New("subscribe boom")
+
 // fakeSubscriber lets module tests exercise the consumer lifecycle
-// without a real Kafka. Each Subscribe call:
-//   - records the per-call ctx so tests can observe cancel propagation,
-//   - returns a channel that stays open until ctx is cancelled, then
-//     blocks drainDelay before closing (simulating in-flight handlers
-//     that take time to wind down).
+// without a real Kafka and without relying on wall-clock timing.
 //
-// The drainDelay is what makes the concurrent-vs-serial Stop test
-// discriminating: with N topics serialized through the bootstrap
-// lifecycle the total Stop time would be N×drainDelay; with the fix
-// (single Module fanning cancel out to all topics at once) it's ~1×.
+// Each successful Subscribe spawns a goroutine that:
+//  1. waits for the per-subscribe ctx to be cancelled,
+//  2. reports its topic name to cancelObserved (the synchronization
+//     point — tests assert here that cancel fanned out to every topic
+//     before any drain completed),
+//  3. blocks on release until the test allows the output channel to
+//     close (which is what lets the consumer goroutine in
+//     newConsumerLifecycle exit its for-range and wg.Done).
+//
+// When failOn is non-empty, Subscribe for that topic returns
+// errSubscribeBoom immediately (exercises the partial-Start cleanup
+// path).
 type fakeSubscriber struct {
-	drainDelay time.Duration
-	mu         sync.Mutex
-	contexts   []context.Context
+	failOn         string
+	cancelObserved chan string
+	release        chan struct{}
 }
 
-func (f *fakeSubscriber) Subscribe(ctx context.Context, _ string) (<-chan eventbus.Envelope, error) {
-	f.mu.Lock()
-	f.contexts = append(f.contexts, ctx)
-	f.mu.Unlock()
+func (f *fakeSubscriber) Subscribe(ctx context.Context, topic string) (<-chan eventbus.Envelope, error) {
+	if topic == f.failOn {
+		return nil, errSubscribeBoom
+	}
 	out := make(chan eventbus.Envelope)
 	go func() {
 		<-ctx.Done()
-		time.Sleep(f.drainDelay)
+		f.cancelObserved <- topic
+		<-f.release
 		close(out)
 	}()
 	return out, nil
@@ -116,86 +122,109 @@ func (f *fakeSubscriber) Subscribe(ctx context.Context, _ string) (<-chan eventb
 
 func (f *fakeSubscriber) Close() error { return nil }
 
-func (f *fakeSubscriber) subscribedCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.contexts)
+// drainCancels reads exactly n topic reports from cancelObserved or
+// fails the test. Reports are returned as a set so callers can assert
+// on identity ("all of a, b, c reported") rather than order.
+func drainCancels(t *testing.T, ch <-chan string, n int) map[string]bool {
+	t.Helper()
+	observed := make(map[string]bool, n)
+	for i := 0; i < n; i++ {
+		select {
+		case topic := <-ch:
+			if observed[topic] {
+				t.Fatalf("duplicate cancel report for %q", topic)
+			}
+			observed[topic] = true
+		case <-time.After(time.Second):
+			t.Fatalf("only %d/%d topics observed cancel within 1s: %v", len(observed), n, observed)
+		}
+	}
+	return observed
 }
 
-func TestConsumerGroup_StopDrainsTopicsConcurrently(t *testing.T) {
-	const drainDelay = 50 * time.Millisecond
-	sub := &fakeSubscriber{drainDelay: drainDelay}
+func TestConsumerGroup_StopCancelsAllTopicsAtomically(t *testing.T) {
+	topics := []string{"a", "b", "c"}
+	sub := &fakeSubscriber{
+		cancelObserved: make(chan string, len(topics)),
+		release:        make(chan struct{}),
+	}
 	handle := func(_ context.Context, _ eventbus.Envelope) error { return nil }
 
-	mod := ConsumerGroup(sub, []string{"a", "b", "c"}, silentLog(), handle)
-
+	mod := ConsumerGroup(sub, topics, silentLog(), handle)
 	if err := mod.Start(context.Background(), nil); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if got := sub.subscribedCount(); got != 3 {
-		t.Fatalf("subscribed topics = %d, want 3", got)
+
+	// Stop will cancel the shared ctx (so every subscribe goroutine
+	// reports to cancelObserved) and then block on wg.Wait — which
+	// can't progress until the test closes release. Run async so we
+	// can assert the in-between state.
+	stopErr := make(chan error, 1)
+	go func() { stopErr <- mod.Stop(context.Background()) }()
+
+	// The invariant: every topic must observe ctx.Done before any of
+	// them is allowed to actually drain. If cancel were serialized
+	// through the bootstrap lifecycle (the bug), this read would
+	// only see one topic until that topic's drain completed.
+	observed := drainCancels(t, sub.cancelObserved, len(topics))
+	for _, want := range topics {
+		if !observed[want] {
+			t.Fatalf("topic %q did not observe cancel; observed=%v", want, observed)
+		}
 	}
 
-	start := time.Now()
-	if err := mod.Stop(context.Background()); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
-	elapsed := time.Since(start)
+	close(sub.release)
 
-	// Concurrent fan-out drain ≈ 1×drainDelay; the broken serial shape
-	// would be 3×drainDelay = 150ms. Threshold at 1.5× catches the
-	// regression while leaving room for scheduler jitter.
-	if max := drainDelay * 3 / 2; elapsed > max {
-		t.Fatalf("Stop took %v, want < %v (drain should be concurrent)", elapsed, max)
+	select {
+	case err := <-stopErr:
+		if err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not return within 1s after release")
 	}
 }
-
-var errSubscribeBoom = errors.New("subscribe boom")
-
-// flakySubscriber succeeds for every topic except failOn, where it
-// returns errSubscribeBoom. Used to verify that ConsumerGroup tears
-// down already-spawned goroutines when a later Subscribe fails.
-type flakySubscriber struct {
-	failOn     string
-	drainDelay time.Duration
-}
-
-func (f *flakySubscriber) Subscribe(ctx context.Context, topic string) (<-chan eventbus.Envelope, error) {
-	if topic == f.failOn {
-		return nil, errSubscribeBoom
-	}
-	out := make(chan eventbus.Envelope)
-	go func() {
-		<-ctx.Done()
-		time.Sleep(f.drainDelay)
-		close(out)
-	}()
-	return out, nil
-}
-
-func (f *flakySubscriber) Close() error { return nil }
 
 func TestConsumerGroup_StartPropagatesSubscribeErrorAndDrains(t *testing.T) {
-	const drainDelay = 30 * time.Millisecond
-	sub := &flakySubscriber{failOn: "c", drainDelay: drainDelay}
+	sub := &fakeSubscriber{
+		failOn:         "c",
+		cancelObserved: make(chan string, 2),
+		release:        make(chan struct{}),
+	}
 	handle := func(_ context.Context, _ eventbus.Envelope) error { return nil }
 
 	mod := ConsumerGroup(sub, []string{"a", "b", "c"}, silentLog(), handle)
 
-	start := time.Now()
-	err := mod.Start(context.Background(), nil)
-	elapsed := time.Since(start)
+	// Start runs the Subscribe loop synchronously and, when "c" fails,
+	// cancels the shared ctx then wg.Waits for the a + b goroutines to
+	// exit. Run async so we can assert "Start is still blocked on
+	// drain" before letting it proceed.
+	startErr := make(chan error, 1)
+	go func() { startErr <- mod.Start(context.Background(), nil) }()
 
-	if !errors.Is(err, errSubscribeBoom) {
-		t.Fatalf("Start err = %v, want errSubscribeBoom", err)
+	observed := drainCancels(t, sub.cancelObserved, 2)
+	for _, want := range []string{"a", "b"} {
+		if !observed[want] {
+			t.Fatalf("topic %q did not observe cancel; observed=%v", want, observed)
+		}
 	}
-	// Start must wait for already-spawned goroutines to drain before
-	// returning so the caller isn't left with leaked workers. Concurrent
-	// drain of two surviving topics ≈ 1×drainDelay.
-	if min := drainDelay; elapsed < min {
-		t.Fatalf("Start returned in %v, want >= %v (must drain spawned goroutines)", elapsed, min)
+
+	// Non-blocking peek: drain hasn't completed (release still open),
+	// so Start must not have returned yet. No wall-clock dependency.
+	select {
+	case err := <-startErr:
+		t.Fatalf("Start returned %v before goroutines drained — would leak workers", err)
+	default:
 	}
-	if max := drainDelay * 3; elapsed > max {
-		t.Fatalf("Start took %v, want < %v (drain should be concurrent)", elapsed, max)
+
+	close(sub.release)
+
+	select {
+	case err := <-startErr:
+		if !errors.Is(err, errSubscribeBoom) {
+			t.Fatalf("Start err = %v, want errSubscribeBoom", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Start did not return within 1s after release")
 	}
 }
