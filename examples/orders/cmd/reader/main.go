@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"sync"
 
 	"github.com/slam0504/go-ddd-core/application/query"
 	"github.com/slam0504/go-ddd-core/bootstrap"
@@ -25,6 +24,7 @@ import (
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/eventcodec"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/projection"
 	slogger "github.com/slam0504/go-ddd-adapters/logger/slogger"
+	otelad "github.com/slam0504/go-ddd-adapters/observability/otel"
 )
 
 const (
@@ -65,31 +65,19 @@ func run() error {
 	store := projection.NewOrderViewStore()
 	qryBus := registerQueries(store)
 
-	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-	apply := func(env eventbus.Envelope) {
+	apply := func(hctx context.Context, env eventbus.Envelope) error {
 		store.Apply(env.Event)
-		log.Log(consumerCtx, logger.LevelDebug, "projection updated",
-			logger.F("event_name", env.Name))
-		env.Ack()
+		log.Log(hctx, logger.LevelDebug, "projection updated", logger.F("event_name", env.Name))
+		return nil
 	}
 
 	app := bootstrap.New(bootstrap.Options{Logger: log})
 	app.Use(
-		runtime.OTelModule(prov),
-		bootstrap.ModuleFunc{
-			ModuleName: "kafka-subscriber",
-			StopFn: func(_ context.Context) error {
-				cancelConsumer()
-				err := sub.Close()
-				wg.Wait()
-				return err
-			},
-		},
-		runtime.ConsumerModule(consumerCtx, sub, topicPlaced, log, &wg, apply),
-		runtime.ConsumerModule(consumerCtx, sub, topicShipped, log, &wg, apply),
-		runtime.HTTPModule(runtime.EnvOr("HTTP_ADDR", defaultHTTPAddr), routes(qryBus, log), log),
+		otelad.Module(prov),
+		kafka.SubscriberModule(sub),
 	)
+	app.Use(kafka.ConsumerGroup(sub, []string{topicPlaced, topicShipped}, log, apply))
+	app.Use(runtime.HTTPModule(runtime.EnvOr("HTTP_ADDR", defaultHTTPAddr), routes(qryBus, log), log))
 	return app.Run(ctx)
 }
 

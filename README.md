@@ -9,8 +9,10 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.1.0` (in development) — starter set covering the three cross-cutting
-concerns most DDD services need before anything else.
+In development. Next release will be `v0.2.0` to align with `go-ddd-core`'s
+breaking API changes (Inbox key, Outbox event ID, Unit-of-Work bridge). The
+adapters surface itself remains a starter set covering the three
+cross-cutting concerns most DDD services need before anything else.
 
 | Adapter | Port | Backing tech |
 | --- | --- | --- |
@@ -24,7 +26,7 @@ concerns most DDD services need before anything else.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
-| `v0.1.x` | `v0.1.x` | `>= 1.24` |
+| `v0.2.x` | `v0.2.x` | `>= 1.24` |
 
 ## Install
 
