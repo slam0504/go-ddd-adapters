@@ -20,6 +20,7 @@ most DDD services need before anything else.
 | Adapter | Port | Backing tech |
 | --- | --- | --- |
 | `eventbus/kafka` | `eventbus.Publisher`, `eventbus.Subscriber`, `eventbus.Codec` | [watermill-kafka v3][wmk] (Sarama) |
+| `eventbus/inbox` | `eventbus.Inbox` | in-process map (`Memory`) with optional `WithMaxSize` and `WithTTL` eviction |
 | `logger/slogger` | `logger.Logger` | `log/slog` (stdlib) |
 | `observability/otel` | `observability.Provider` | OpenTelemetry SDK v1.32 |
 
@@ -60,6 +61,29 @@ defer pub.Close()
 
 _ = pub.Publish(ctx, "game-events", evt)
 ```
+
+### In-process Inbox
+
+```go
+in := inbox.NewMemory(
+    inbox.WithMaxSize(10_000),       // bound the dedup map
+    inbox.WithTTL(24*time.Hour),     // and/or time-based expiry
+)
+
+k := eventbus.InboxKey{Consumer: "projector", EventID: evt.EventID()}
+seen, _ := in.Seen(ctx, k)
+if seen {
+    return nil // already processed
+}
+if err := handler(ctx, evt); err != nil {
+    return err
+}
+return in.Record(ctx, k)
+```
+
+The `Inbox` interface itself lives in
+`github.com/slam0504/go-ddd-core/eventbus`; this adapter ships the
+in-process default that previously lived in `go-ddd-core` v0.2.0–v0.3.0.
 
 ### Slog logger
 
