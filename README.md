@@ -9,10 +9,13 @@ without re-inventing the plumbing.
 
 ## Status
 
-In development. Next release will be `v0.2.0` to align with `go-ddd-core`'s
-breaking API changes (Inbox key, Outbox event ID, Unit-of-Work bridge). The
-adapters surface itself remains a starter set covering the three
-cross-cutting concerns most DDD services need before anything else.
+In development. `main` is aligned with `go-ddd-core v0.3.0`. v0.3.0
+introduced contract changes inside core (Inbox key, Outbox event ID,
+Unit-of-Work bridge), but those ports are not yet implemented in this
+repo — only event bus, logger, and observability adapters ship today —
+so the bump landed without migration work in adapter code. The adapter
+surface remains a starter set covering the three cross-cutting concerns
+most DDD services need before anything else.
 
 | Adapter | Port | Backing tech |
 | --- | --- | --- |
@@ -26,6 +29,7 @@ cross-cutting concerns most DDD services need before anything else.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `main` (untagged, post `v0.2.0`) | `v0.3.x` | `>= 1.24` |
 | `v0.2.x` | `v0.2.x` | `>= 1.24` |
 
 ## Install
