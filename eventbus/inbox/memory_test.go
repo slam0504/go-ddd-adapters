@@ -112,6 +112,35 @@ func TestUnboundedByDefault(t *testing.T) {
 	}
 }
 
+func TestTTL_SeenReportsFalseAfterExpiry(t *testing.T) {
+	now := time.Unix(0, 0)
+	clock := func() time.Time { return now }
+	in := inbox.NewMemory(inbox.WithTTL(10*time.Second), inbox.WithClock(clock))
+	ctx := context.Background()
+	k := key("c1", "evt-1")
+
+	if err := in.Record(ctx, k); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if seen, _ := in.Seen(ctx, k); !seen {
+		t.Fatalf("expected Seen=true immediately after Record")
+	}
+
+	// Advance past TTL boundary.
+	now = now.Add(11 * time.Second)
+	if seen, _ := in.Seen(ctx, k); seen {
+		t.Fatalf("expected Seen=false after TTL expiry")
+	}
+
+	// After expiry, Record overwrites with a fresh timestamp.
+	if err := in.Record(ctx, k); err != nil {
+		t.Fatalf("Record after expiry: %v", err)
+	}
+	if seen, _ := in.Seen(ctx, k); !seen {
+		t.Fatalf("expected Seen=true after re-Record post-expiry")
+	}
+}
+
 func idString(i int) string {
 	return "evt-" + intToStr(i)
 }

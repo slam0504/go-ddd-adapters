@@ -32,6 +32,7 @@ type Memory struct {
 	seenAt  map[eventbus.InboxKey]time.Time
 	now     func() time.Time
 	maxSize int
+	ttl     time.Duration
 }
 
 // MemoryOption configures a Memory inbox.
@@ -51,6 +52,21 @@ func WithMaxSize(limit int) MemoryOption {
 	return func(m *Memory) { m.maxSize = limit }
 }
 
+// WithTTL sets a maximum age for dedup entries. Once a key's recorded
+// timestamp is older than d, Seen reports it as not seen and Record
+// overwrites the entry with a fresh timestamp. Setting d to 0 disables
+// TTL behaviour (entries remain valid until evicted by WithMaxSize, the
+// historical behaviour).
+//
+// TTL composes with WithMaxSize: an entry stops counting as seen when
+// either rule fires. Expired entries are NOT eagerly removed from memory;
+// they are filtered out at read time and reclaimed by WithMaxSize
+// eviction. For long-running services with high event cardinality, set
+// WithMaxSize alongside WithTTL.
+func WithTTL(d time.Duration) MemoryOption {
+	return func(m *Memory) { m.ttl = d }
+}
+
 // NewMemory constructs an in-memory inbox.
 func NewMemory(opts ...MemoryOption) *Memory {
 	m := &Memory{
@@ -63,22 +79,35 @@ func NewMemory(opts ...MemoryOption) *Memory {
 	return m
 }
 
-// Seen reports whether key has been recorded.
+// Seen reports whether key has been recorded. When WithTTL was set, an
+// entry recorded more than ttl ago reports false (the caller's handler
+// will be invoked again and may re-Record the key).
 func (m *Memory) Seen(_ context.Context, key eventbus.InboxKey) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	_, ok := m.seenAt[key]
-	return ok, nil
+	seenAt, ok := m.seenAt[key]
+	if !ok {
+		return false, nil
+	}
+	if m.ttl > 0 && m.now().Sub(seenAt) > m.ttl {
+		return false, nil
+	}
+	return true, nil
 }
 
-// Record marks key as processed. Calling Record on an already-seen key is a
-// no-op (the original timestamp is preserved) so handlers may safely retry
-// without skewing the eviction order.
+// Record marks key as processed. On an already-seen key the behaviour
+// depends on TTL: if WithTTL is unset or the existing timestamp is still
+// within ttl, Record is a no-op (the original timestamp is preserved).
+// If the existing timestamp is older than ttl, the entry is overwritten
+// with the current time, restarting the dedup window.
 func (m *Memory) Record(_ context.Context, key eventbus.InboxKey) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.seenAt[key]; ok {
-		return nil
+	if seenAt, ok := m.seenAt[key]; ok {
+		if m.ttl == 0 || m.now().Sub(seenAt) <= m.ttl {
+			return nil
+		}
+		// expired — fall through to overwrite below
 	}
 	m.seenAt[key] = m.now()
 	if m.maxSize > 0 && len(m.seenAt) > m.maxSize {
