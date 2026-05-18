@@ -12,8 +12,8 @@ Last verified: 2026-05-18 Asia/Taipei
   audit on `Inbox|Outbox|TxManager|UnitOfWork|UoW|WithinTx` confirmed no
   adapter code touches any of the v0.3.0 changed APIs, so the bump
   landed without migration. Cross-checked against
-  `/Users/eason_tseng/playground/project/.agent-memory/go-ddd.md` which
-  records the same audit outcome.
+  `<workspace-root>/.agent-memory/go-ddd.md` which records the same
+  audit outcome.
 
 ## Current Open Review Items
 

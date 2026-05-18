@@ -1,7 +1,11 @@
 # go-ddd-adapters Agent Memory Rules
 
-Read `/Users/eason_tseng/playground/project/AGENTS.md` first for the shared
-Claude/Codex protocol.
+Paths written as `<workspace-root>/...` in this file and in `.agent/`
+refer to the directory that contains both `go-ddd-core` and
+`go-ddd-adapters` as sibling repos. Substitute your own layout when
+reading.
+
+Read `<workspace-root>/AGENTS.md` first for the shared Claude/Codex protocol.
 
 ## Project Role
 
@@ -15,7 +19,7 @@ Keep technology-specific dependencies here, not in `go-ddd-core`.
 2. Read `.agent/decisions.md`.
 3. Read `.agent/review-log.md`.
 4. If work affects core contracts or releases, read
-   `/Users/eason_tseng/playground/project/.agent-memory/go-ddd.md`.
+   `<workspace-root>/.agent-memory/go-ddd.md`.
 5. Run:
 
    ```sh
@@ -41,5 +45,4 @@ At the end of meaningful work, update:
 - `.agent/state.md`
 - `.agent/decisions.md` if a design is accepted or changed
 - `.agent/review-log.md` if CR findings were added or resolved
-- `/Users/eason_tseng/playground/project/.agent-memory/go-ddd.md` for
-  cross-repo changes
+- `<workspace-root>/.agent-memory/go-ddd.md` for cross-repo changes

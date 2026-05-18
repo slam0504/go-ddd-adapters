@@ -30,7 +30,7 @@ read, `git tag -l`, and a grep audit of v0.3.0 changed APIs across the repo.
 
 ## Next Steps
 
-- Track v0.4.0 planning from `/Users/eason_tseng/playground/project/.agent-memory/go-ddd.md`.
+- Track v0.4.0 planning from `<workspace-root>/.agent-memory/go-ddd.md`.
   Primary item is moving `eventbus/inbox/memory.go` from `go-ddd-core` into
   this repo (code-level breaking change pre-announced in core's CHANGELOG
   `### Deprecated` and `docs/anti-patterns.md`).
