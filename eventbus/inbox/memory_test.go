@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/slam0504/go-ddd-adapters/eventbus/inbox"
 	"github.com/slam0504/go-ddd-core/eventbus"
+
+	"github.com/slam0504/go-ddd-adapters/eventbus/inbox"
 )
 
 func key(consumer, eventID string) eventbus.InboxKey {
