@@ -141,6 +141,118 @@ func TestTTL_SeenReportsFalseAfterExpiry(t *testing.T) {
 	}
 }
 
+// TestTTL_BehaviorTable nails down the Seen() boundary semantics.
+// The implementation uses a strict greater-than (now()-seenAt > ttl), so an
+// entry at exactly ttl is still fresh and one nanosecond past is expired.
+// Pinning this in a table protects against accidental >= or rounding drift.
+func TestTTL_BehaviorTable(t *testing.T) {
+	cases := []struct {
+		name      string
+		ttl       time.Duration
+		ageAtRead time.Duration
+		wantSeen  bool
+	}{
+		{"ttl_disabled_when_zero", 0, 100 * time.Hour, true},
+		{"fresh_within_ttl", 10 * time.Second, 5 * time.Second, true},
+		{"exact_boundary_still_fresh", 10 * time.Second, 10 * time.Second, true},
+		{"one_nanosecond_past_ttl_expired", 10 * time.Second, 10*time.Second + time.Nanosecond, false},
+		{"long_past_ttl_expired", 10 * time.Second, 30 * time.Second, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			now := time.Unix(0, 0)
+			clock := func() time.Time { return now }
+			in := inbox.NewMemory(inbox.WithTTL(tc.ttl), inbox.WithClock(clock))
+			ctx := context.Background()
+			k := key("c1", "evt-1")
+			if err := in.Record(ctx, k); err != nil {
+				t.Fatalf("Record: %v", err)
+			}
+			now = now.Add(tc.ageAtRead)
+			got, err := in.Seen(ctx, k)
+			if err != nil {
+				t.Fatalf("Seen: %v", err)
+			}
+			if got != tc.wantSeen {
+				t.Fatalf("ttl=%v age=%v: Seen=%v, want %v",
+					tc.ttl, tc.ageAtRead, got, tc.wantSeen)
+			}
+		})
+	}
+}
+
+// TestTTL_RecordOnExpiredOverwritesInPlace ensures the expired-overwrite
+// path in Record reuses the existing map slot rather than allocating a new
+// one — Size must stay at 1 even though the entry was effectively replaced.
+func TestTTL_RecordOnExpiredOverwritesInPlace(t *testing.T) {
+	now := time.Unix(0, 0)
+	clock := func() time.Time { return now }
+	in := inbox.NewMemory(inbox.WithTTL(5*time.Second), inbox.WithClock(clock))
+	ctx := context.Background()
+	k := key("c1", "evt-1")
+
+	if err := in.Record(ctx, k); err != nil {
+		t.Fatalf("first Record: %v", err)
+	}
+	if got := in.Size(); got != 1 {
+		t.Fatalf("after first Record Size=%d, want 1", got)
+	}
+
+	now = now.Add(10 * time.Second) // past TTL
+	if err := in.Record(ctx, k); err != nil {
+		t.Fatalf("Record after expiry: %v", err)
+	}
+	if got := in.Size(); got != 1 {
+		t.Fatalf("Record on expired key should overwrite in place, Size=%d, want 1", got)
+	}
+}
+
+// TestTTL_AndMaxSizeCompose verifies the two eviction rules co-exist:
+// MaxSize bounds the map at write time, TTL filters at read time. Neither
+// disables the other.
+func TestTTL_AndMaxSizeCompose(t *testing.T) {
+	now := time.Unix(0, 0)
+	clock := func() time.Time { return now }
+	in := inbox.NewMemory(
+		inbox.WithTTL(5*time.Second),
+		inbox.WithMaxSize(4),
+		inbox.WithClock(clock),
+	)
+	ctx := context.Background()
+
+	// Record a..d at t=0s (all tied on timestamp).
+	for _, id := range []string{"a", "b", "c", "d"} {
+		if err := in.Record(ctx, key("c1", id)); err != nil {
+			t.Fatalf("Record %q: %v", id, err)
+		}
+	}
+
+	// Jump past TTL, then insert "e" at t=10s — map hits 5, evictOldestHalf
+	// drops two entries. Surviving a-d are still at t=0s, so they're past
+	// TTL by the time we read.
+	now = now.Add(10 * time.Second)
+	if err := in.Record(ctx, key("c1", "e")); err != nil {
+		t.Fatalf("Record e: %v", err)
+	}
+	if got := in.Size(); got != 3 {
+		t.Fatalf("after MaxSize eviction Size=%d, want 3", got)
+	}
+
+	// "e" is fresh (age=0s), should be Seen.
+	if seen, _ := in.Seen(ctx, key("c1", "e")); !seen {
+		t.Fatalf("e at age 0s should be Seen")
+	}
+
+	// Any of a..d that survived MaxSize eviction is still past TTL, so
+	// Seen must report false for all of them.
+	for _, id := range []string{"a", "b", "c", "d"} {
+		if seen, _ := in.Seen(ctx, key("c1", id)); seen {
+			t.Fatalf("%q at age=10s with TTL=5s should be filtered out by TTL", id)
+		}
+	}
+}
+
 func idString(i int) string {
 	return "evt-" + intToStr(i)
 }
