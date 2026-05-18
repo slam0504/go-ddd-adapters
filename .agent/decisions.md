@@ -59,8 +59,8 @@ re-reading core source.
 ## Inbox Adapter Package (`eventbus/inbox`)
 
 The in-process `Memory` Inbox originally shipped in `go-ddd-core` v0.2.0
-and was relocated to this repo in PR #N (TBD on merge). Key design
-choices recorded for future SQL/Redis adapter work:
+and was relocated to this repo in PR #7 (merged 2026-05-18). Key
+design choices recorded for future SQL/Redis adapter work:
 
 - **Path is `eventbus/inbox` (flat package `inbox`), not
   `eventbus/inbox/memory`.** Three reasons:
