@@ -1,27 +1,28 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-19 Asia/Taipei (afternoon, post PR #9 merge)
+Last verified: 2026-05-19 Asia/Taipei (evening, post v0.3.0 tag cut)
 Source: verified via `git status --short`, `git log --oneline -10`, `go.mod`
-read, `git tag -l`, and a cross-check against
+read, `git tag -l`, GitHub Release inspection, and a cross-check against
 `<workspace-root>/.agent-memory/go-ddd.md`.
 
 ## Current Branch
 
 - branch: `main` (clean working tree against `origin/main`)
-- tags present in repo: `v0.1.0`, `v0.2.0`. Still no `v0.3.x` /
-  `v0.4.0-pre` tag cut on adapters; `main` continues to be the
-  pinning surface for downstream services.
+- tags present in repo: `v0.1.0`, `v0.2.0`, **`v0.3.0`** (annotated,
+  pushed 2026-05-19 evening; GitHub Release marked Latest at
+  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.3.0).
+  `v0.3.0` points at merge commit `3ce2a23`.
 - latest commits on `main`:
+  - `3ce2a23` `Merge pull request #11 from slam0504/release/v0.3.0`
+  - `d603984` `docs(release): finalize v0.3.0 — Inbox + Outbox + kafka header bridge`
+  - `d9342ef` `Merge pull request #10 from slam0504/chore/post-v0.4.0-outbox-bookkeeping`
+  - `7c5eeb9` `chore(agent-memory): record v0.4.0 outbox cycle CLOSED post PR #9`
   - `6abeafd` `Merge pull request #9 from slam0504/feat/outbox-relay-memory`
   - `bd79e73` `style(eventbus/outbox): gofmt + suppress two gosec false positives`
   - `2f86e2e` `docs(outbox): register adapter in README + CHANGELOG entry + usage sketch`
   - `fb7e9ec` `test(eventbus/outbox): table-driven Memory + Relay + module tests`
   - `9ae090d` `feat(eventbus/kafka): RestoreCoreHeaders helper for outbox relay wiring`
   - `d326952` `feat(eventbus/outbox): polling Relay with backoff, DLQ, header restorer, bootstrap module`
-  - `246277f` `feat(eventbus/outbox): in-process Memory implementing Outbox + OutboxStore + DeadLetterRecorder`
-  - `f25d7f1` `chore(agent-memory): pre-flight decisions.md for outbox adapter`
-  - `ff81048` `Merge pull request #8 from slam0504/chore/post-v0.4.0-bookkeeping`
-  - `2ae4b52` `Merge pull request #7 from slam0504/feat/inbox-memory-adapter`
 
 ## Current Status
 
@@ -41,6 +42,14 @@ read, `git tag -l`, and a cross-check against
   CHANGELOG, and `.agent/decisions.md` "Outbox Adapter Package" —
   production users must wait for the pgx successor. All 23 design
   decisions recorded in decisions.md.
+- **`v0.3.0` release cycle is CLOSED** (PR #11 merged 2026-05-19
+  evening, tag `v0.3.0` annotated at `3ce2a23`, GitHub Release
+  published as Latest). First tagged release on the v0.3.x line;
+  aligns adapters with `go-ddd-core v0.3.0`. Downstream services
+  can now pin via `go get
+  github.com/slam0504/go-ddd-adapters@v0.3.0`. The `[Unreleased]`
+  CHANGELOG section is now empty and ready to accumulate the next
+  cycle.
 - Kafka and OTel bootstrap module helpers are on `main`.
 - `ConsumerGroup` is a single `bootstrap.ModuleFunc` with shared context
   and WaitGroup, so Stop cancels all topic consumers atomically.
@@ -73,18 +82,20 @@ read, `git tag -l`, and a cross-check against
   "no outbox" shortcut documented in the example; gated on whether the
   team wants the memory adapter on the demo path or prefers waiting
   for pgx.
-- **adapters tag** (optional): cut a `v0.3.x` or `v0.4.0-pre` tag so
-  downstream services have a pinnable version aligned with core v0.3.0
-  AND the new inbox + outbox packages.
+- ~~adapters tag~~ ✅ done 2026-05-19: `v0.3.0` annotated tag pushed
+  to origin at `3ce2a23` with a GitHub Release marked Latest.
 
 ## Verification
 
-Last green run (PR #9 CI, 2026-05-19):
+Last green run (PR #11 CI, 2026-05-19 — release prep):
 
 - `go test ./...` PASS (root + `examples/orders`).
 - `go test -race ./eventbus/outbox/...` PASS locally before push.
 - `golangci-lint run ./...` 0 issues.
 - `integration (testcontainers)` PASS.
+- Tag `v0.3.0` cut at `3ce2a23` (same tree as PR #11 merge); no
+  separate CI on the tag itself, but the underlying commit is the
+  green-CI artifact of PR #11.
 
 Default verification before any release-related work:
 
