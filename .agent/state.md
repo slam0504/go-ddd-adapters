@@ -1,6 +1,6 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-19 Asia/Taipei (evening, post v0.3.0 tag cut)
+Last verified: 2026-05-19 Asia/Taipei (late evening, post v0.4.0 gating audit)
 Source: verified via `git status --short`, `git log --oneline -10`, `go.mod`
 read, `git tag -l`, GitHub Release inspection, and a cross-check against
 `<workspace-root>/.agent-memory/go-ddd.md`.
@@ -66,11 +66,21 @@ read, `git tag -l`, GitHub Release inspection, and a cross-check against
 
 ## Open Items
 
-- **v0.4.0 core-side removal** (on `go-ddd-core`): once enough
-  downstream services have migrated to
-  `go-ddd-adapters/eventbus/inbox`, core can physically remove
-  `eventbus/inbox/memory.go`. Not in adapters' scope, but tracked here
-  because the migration story is shared.
+- **v0.4.0 core-side removal** (on `go-ddd-core`): physically removing
+  `eventbus/inbox/memory.go` is gated on two conditions, not one:
+  1. downstream services have migrated their import path from
+     `go-ddd-core/eventbus/inbox` to `go-ddd-adapters/eventbus/inbox`
+     (no inventory of consumers exists yet — user must surface the
+     list before migration can be planned), AND
+  2. **adapters has cut its next release after `v0.3.0`** — the
+     CHANGELOG promises `eventbus/inbox/memory.go` stays on core for
+     "one more release cycle", so the overlap window closes when the
+     adapters tag advances (likely the pgx outbox cycle). Until that
+     tag exists, removing the core copy would break the published
+     guarantee even if all known consumers had already migrated.
+
+  Not in adapters' scope to execute, but tracked here because both
+  gating conditions touch this repo's release cadence.
 - **pgx-Postgres Outbox** (`eventbus/outbox/pgx`, next cycle): real
   transactional `Stage` via `ports/database.TxManager` bridge,
   durable `last_error` column, `SELECT FOR UPDATE SKIP LOCKED`
