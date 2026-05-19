@@ -30,6 +30,9 @@ func RelayModule(r *Relay, log logger.Logger) bootstrap.ModuleFunc {
 	return bootstrap.ModuleFunc{
 		ModuleName: "outbox-relay",
 		StartFn: func(startCtx context.Context, _ *bootstrap.App) error {
+			// cancel is called from StopFn below; gosec G118 doesn't trace
+			// the closure-captured handoff so we suppress the false positive.
+			//nolint:gosec // cancel called in StopFn
 			runCtx, c := context.WithCancel(context.WithoutCancel(startCtx))
 			cancel = c
 			runDone = make(chan struct{})

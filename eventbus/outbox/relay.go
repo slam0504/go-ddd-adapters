@@ -260,6 +260,9 @@ func defaultBackoff(attempts int) time.Duration {
 	if base <= 0 || base > maxBackoff {
 		base = maxBackoff
 	}
+	// Jitter doesn't need cryptographic randomness; math/rand/v2 is the
+	// correct stdlib choice here. gosec G404 doesn't distinguish use cases.
+	//nolint:gosec // not a security-sensitive RNG
 	return time.Duration(rand.Int64N(int64(base)))
 }
 

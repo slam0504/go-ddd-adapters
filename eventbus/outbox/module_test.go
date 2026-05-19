@@ -19,8 +19,8 @@ import (
 // captureLogger writes JSON-encoded log records into an internal buffer
 // so tests can assert on the level / message of what the module emitted.
 type captureLogger struct {
-	mu  sync.Mutex
-	buf *bytes.Buffer
+	mu    sync.Mutex
+	buf   *bytes.Buffer
 	inner logger.Logger
 }
 

@@ -88,7 +88,7 @@ func TestRestoreCoreHeaders_OmitsEmptyValues(t *testing.T) {
 // WithHeaderRestorer pattern accepts.
 func TestRestoreCoreHeaders_IgnoresNonWellKnownHeaders(t *testing.T) {
 	stored := map[string]string{
-		"my-custom-header": "should-not-propagate",
+		"my-custom-header":     "should-not-propagate",
 		eventbus.HeaderTraceID: "trace-x",
 	}
 

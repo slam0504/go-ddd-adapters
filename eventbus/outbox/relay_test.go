@@ -63,9 +63,9 @@ func (p *fakePublisher) Publish(ctx context.Context, topic string, events ...dom
 // dlqLessStore implements eventbus.OutboxStore but NOT DeadLetterRecorder.
 type dlqLessStore struct{}
 
-func (dlqLessStore) Fetch(context.Context, int) ([]eventbus.OutboxRecord, error)   { return nil, nil }
-func (dlqLessStore) MarkSent(context.Context, string) error                        { return nil }
-func (dlqLessStore) MarkFailed(context.Context, string, string, time.Time) error   { return nil }
+func (dlqLessStore) Fetch(context.Context, int) ([]eventbus.OutboxRecord, error) { return nil, nil }
+func (dlqLessStore) MarkSent(context.Context, string) error                      { return nil }
+func (dlqLessStore) MarkFailed(context.Context, string, string, time.Time) error { return nil }
 
 // scriptedStore returns a fixed list of records on Fetch and captures
 // MarkSent / MarkFailed / Terminate calls.

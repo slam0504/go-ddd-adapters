@@ -36,9 +36,9 @@ func makeEvent(id, name, aggID, aggType, body string) *testEvent {
 // that Memory.Stage reads those fields from the DomainEvent methods
 // rather than from codec metadata (decision #23).
 type jsonCodec struct {
-	failOn       string // EventID that should fail Marshal; empty = never fail
-	headerMode   string // "none" | "all"; default "all" — set "none" to omit metadata
-	registry     map[string]func() domain.DomainEvent
+	failOn     string // EventID that should fail Marshal; empty = never fail
+	headerMode string // "none" | "all"; default "all" — set "none" to omit metadata
+	registry   map[string]func() domain.DomainEvent
 }
 
 func newJSONCodec() *jsonCodec {
