@@ -9,13 +9,14 @@ without re-inventing the plumbing.
 
 ## Status
 
-In development. `main` is aligned with `go-ddd-core v0.3.0`. v0.3.0
-introduced contract changes inside core (Inbox key, Outbox event ID,
-Unit-of-Work bridge), but those ports are not yet implemented in this
-repo — only event bus, logger, and observability adapters ship today —
-so the bump landed without migration work in adapter code. The adapter
-surface remains a starter set covering the three cross-cutting concerns
-most DDD services need before anything else.
+`v0.3.0` is the first tagged release on the v0.3.x line and aligns
+this repo with `go-ddd-core v0.3.0`. v0.3.0 brings the in-process
+`Memory` Inbox (relocated from core) and the new in-process Outbox +
+Relay (with adapter-private DLQ and a kafka header-restorer bridge),
+plus the unchanged Kafka publisher/subscriber/codec, slog logger, and
+OpenTelemetry provider that already shipped in `v0.2.0`. The `Memory`
+Outbox is explicitly a non-transactional test/dev adapter — production
+users need the forthcoming SQL/pgx successor.
 
 | Adapter | Port | Backing tech |
 | --- | --- | --- |
@@ -31,7 +32,8 @@ most DDD services need before anything else.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
-| `main` (untagged, post `v0.2.0`) | `v0.3.x` | `>= 1.24` |
+| `main` (post-`v0.3.0`) | `v0.3.x` | `>= 1.24` |
+| `v0.3.0` | `v0.3.0` | `>= 1.24` |
 | `v0.2.x` | `v0.2.x` | `>= 1.24` |
 
 ## Install
