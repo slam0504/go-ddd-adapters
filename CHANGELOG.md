@@ -22,6 +22,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retain ack/nack control.
 - Public context-key helpers (`WithTraceID`, `TraceIDFrom`, …) for
   trace/correlation pass-through.
+- `RestoreCoreHeaders` — an `outbox.HeaderRestorer` callback that
+  re-injects the three core well-known propagation headers
+  (`trace_id` / `causation_id` / `correlation_id`) from a stored
+  `OutboxRecord.Headers` map back into ctx via this package's
+  `WithTraceID` / `WithCausationID` / `WithCorrelationID` helpers.
+
+#### Outbox eventbus (`eventbus/outbox`)
+- New package providing in-process implementations of core's outbox
+  contracts. **`Memory` is a non-transactional test/dev adapter only.**
+  It implements `eventbus.Outbox` for shape compatibility but does NOT
+  participate in the caller's database transaction (only in-process
+  mutex safety inside its own store). Use it for tests, single-instance
+  examples, and exercising Relay/backoff/DLQ behaviour — not for
+  production. The forthcoming SQL/pgx successor will deliver a real
+  transactional Outbox.
+- `Memory` satisfies `eventbus.Outbox`, `eventbus.OutboxStore`, and
+  the local `DeadLetterRecorder` extension. Options:
+  `WithMaxSize` (returns `ErrOutboxFull` on overflow; never evicts
+  unsent records), `WithClock`, `WithIDGenerator`. Stage is
+  all-or-nothing: marshal failures abort the batch; canonical
+  `EventName / AggregateID / AggregateType` come from the
+  `domain.DomainEvent` interface methods, not from codec metadata.
+- `Relay` is a driver-agnostic polling drainer. Options:
+  `WithPollInterval`, `WithBatchSize`, `WithBackoff` (default
+  exponential with jitter, capped at 60s), `WithMaxAttempts` (default
+  10; 0 = unlimited), `WithRelayClock`, `WithHeaderRestorer`. Per-
+  record `defer recover` routes panics through the same `fail()` path
+  that handles publish errors, so MaxAttempts / DLQ still apply.
+  `ErrRelayAlreadyRunning` guards same-`*Relay` reentry; multi-Relay
+  against one Memory is the user's responsibility.
+- `DeadLetterRecord` carries `Attempts` (terminal count =
+  `Record.Attempts + 1`), `Reason`, and `FailedAt`. `Memory.DeadLettered()`
+  returns a defensive-copy snapshot for inspection.
+- `RelayModule(*Relay, logger.Logger)` wraps Relay into a
+  `bootstrap.ModuleFunc` with the kafka-consumer-style detach-then-
+  cancel lifecycle: Start spawns one goroutine; Stop cancels and
+  waits bounded by `stopCtx`; `context.Canceled` is a silent clean
+  shutdown.
 
 #### Slog logger (`logger/slogger`)
 - `Logger` implementing `logger.Logger` over `log/slog`.
