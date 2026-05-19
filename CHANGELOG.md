@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-05-19
+
+First tagged release on the v0.3.x line. Aligns adapters with
+`go-ddd-core v0.3.0` and lands the inbox + outbox adapter packages
+plus the kafka outbox-relay header bridge. No breaking changes to
+adapters that existed in `v0.2.0` (Kafka publisher / subscriber /
+codec, slog logger, OpenTelemetry provider) — all v0.3.0 additions
+are new packages or new exported symbols.
+
 ### Added
 
 #### Kafka eventbus (`eventbus/kafka`)
@@ -27,6 +36,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`trace_id` / `causation_id` / `correlation_id`) from a stored
   `OutboxRecord.Headers` map back into ctx via this package's
   `WithTraceID` / `WithCausationID` / `WithCorrelationID` helpers.
+
+#### Inbox eventbus (`eventbus/inbox`)
+- New package providing the in-process `Memory` Inbox previously
+  shipped at `go-ddd-core/eventbus/inbox/memory.go` (v0.2.0 / v0.3.0).
+  Downstream services migrate by changing the import path from
+  `go-ddd-core/eventbus/inbox` to
+  `go-ddd-adapters/eventbus/inbox`; call sites
+  (`inbox.NewMemory(...)`) stay identical.
+- `WithMaxSize(limit int)` bounds the dedup map by evicting the
+  oldest half whenever the map reaches `limit`. Default is
+  unbounded.
+- `WithTTL(d time.Duration)` adds time-based dedup expiry. Lazy
+  filtering at read time (no write-side contention); `Record`
+  overwrites an expired entry in place; expired entries are
+  reclaimed only when `WithMaxSize`-triggered eviction fires.
+  Strict-`>` boundary: `age == ttl` is still fresh,
+  `age == ttl + 1ns` is expired.
+- `WithClock(now func() time.Time)` for deterministic tests.
+- Core retains its copy of `eventbus/inbox/memory.go` for one more
+  release cycle; the planned removal there is tracked as an open
+  follow-up (see `.agent/state.md`).
 
 #### Outbox eventbus (`eventbus/outbox`)
 - New package providing in-process implementations of core's outbox
@@ -83,4 +113,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/HEAD...main
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.3.0...HEAD
+[v0.3.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.2.0...v0.3.0
