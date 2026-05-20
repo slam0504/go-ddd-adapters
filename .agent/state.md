@@ -1,18 +1,25 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-19 Asia/Taipei (late evening, post v0.4.0 gating audit)
-Source: verified via `git status --short`, `git log --oneline -10`, `go.mod`
-read, `git tag -l`, GitHub Release inspection, and a cross-check against
-`<workspace-root>/.agent-memory/go-ddd.md`.
+Last verified: 2026-05-20 Asia/Taipei (evening, end of `feat/outbox-pgx-adapter` branch, PR-ready before push)
+Source: verified via `git log origin/main --oneline`, `git tag -l`,
+`git rev-list --count main..HEAD` (feat branch is 11 commits ahead of
+main at `d1db48c`), and the in-flight memory file
+`pgx_outbox_pr_in_flight.md`.
 
 ## Current Branch
 
-- branch: `main` (clean working tree against `origin/main`)
+- main: `b69104d` (HEAD as of 2026-05-20 evening; not yet bumped by
+  this branch — `feat/outbox-pgx-adapter` is 11 commits ahead but
+  unpushed)
+- in-flight branch: `feat/outbox-pgx-adapter` at `d1db48c`, PR-ready
 - tags present in repo: `v0.1.0`, `v0.2.0`, **`v0.3.0`** (annotated,
   pushed 2026-05-19 evening; GitHub Release marked Latest at
   https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.3.0).
   `v0.3.0` points at merge commit `3ce2a23`.
 - latest commits on `main`:
+  - `b69104d` `Merge pull request #13 from slam0504/chore/state-v0.4.0-gating-followup`
+  - `8ad04c6` `chore(state): record second gating condition for core v0.4.0 inbox removal`
+  - `17d6323` `Merge pull request #12 from slam0504/chore/post-v0.3.0-tag-bookkeeping`
   - `3ce2a23` `Merge pull request #11 from slam0504/release/v0.3.0`
   - `d603984` `docs(release): finalize v0.3.0 — Inbox + Outbox + kafka header bridge`
   - `d9342ef` `Merge pull request #10 from slam0504/chore/post-v0.4.0-outbox-bookkeeping`
@@ -20,9 +27,6 @@ read, `git tag -l`, GitHub Release inspection, and a cross-check against
   - `6abeafd` `Merge pull request #9 from slam0504/feat/outbox-relay-memory`
   - `bd79e73` `style(eventbus/outbox): gofmt + suppress two gosec false positives`
   - `2f86e2e` `docs(outbox): register adapter in README + CHANGELOG entry + usage sketch`
-  - `fb7e9ec` `test(eventbus/outbox): table-driven Memory + Relay + module tests`
-  - `9ae090d` `feat(eventbus/kafka): RestoreCoreHeaders helper for outbox relay wiring`
-  - `d326952` `feat(eventbus/outbox): polling Relay with backoff, DLQ, header restorer, bootstrap module`
 
 ## Current Status
 
@@ -48,8 +52,27 @@ read, `git tag -l`, GitHub Release inspection, and a cross-check against
   aligns adapters with `go-ddd-core v0.3.0`. Downstream services
   can now pin via `go get
   github.com/slam0504/go-ddd-adapters@v0.3.0`. The `[Unreleased]`
-  CHANGELOG section is now empty and ready to accumulate the next
-  cycle.
+  CHANGELOG section is the accumulator for the next cycle (v0.4.0
+  pgx outbox below).
+- **v0.4.0 pgx-Postgres outbox cycle: PR-ready, awaiting push +
+  review** (`feat/outbox-pgx-adapter` branch at `d1db48c`, 11
+  commits ahead of `main` at `b69104d`). New packages
+  `eventbus/outbox/pgx` (transactional Outbox + OutboxStore + DLQ
+  via `claim_token` UUID + `FOR UPDATE SKIP LOCKED` + atomic CTE
+  Terminate) and `ports/database/pgx` (TxManager + ctx helpers +
+  Executor). Closes the five memory-adapter limitations recorded in
+  `.agent/decisions.md`. Plan-locked at `~/.claude/plans/outbox-relay-agile-orbit.md`
+  revision 5 (commit 8 pulled forward to land CI coverage before
+  Store impl). Two in-band Codex review rounds closed: `fde15ce`
+  fixed `UPDATE ... RETURNING` row order via outer SELECT;
+  `d1db48c` tightened SKIP LOCKED wording from "partition" to
+  "claim disjoint rows". Local `golangci-lint --build-tags=integration
+  ./...` 0 issues; `go test -race ./...` green. Container-driven
+  integration tests run in CI via the pgx step added in `c028ef3`.
+  **Go floor bumped 1.24 → 1.25** on the adapter root module
+  (required by pgx/v5 v5.9.2 + testcontainers v0.42.0 +
+  golang-migrate v4.19.1 + current OTel releases); CI runner and
+  `examples/orders/Dockerfile` follow.
 - Kafka and OTel bootstrap module helpers are on `main`.
 - `ConsumerGroup` is a single `bootstrap.ModuleFunc` with shared context
   and WaitGroup, so Stop cancels all topic consumers atomically.
@@ -81,13 +104,22 @@ read, `git tag -l`, GitHub Release inspection, and a cross-check against
 
   Not in adapters' scope to execute, but tracked here because both
   gating conditions touch this repo's release cadence.
-- **pgx-Postgres Outbox** (`eventbus/outbox/pgx`, next cycle): real
-  transactional `Stage` via `ports/database.TxManager` bridge,
-  durable `last_error` column, `SELECT FOR UPDATE SKIP LOCKED`
-  multi-Relay safety, DLQ table with the same `Attempts` terminal
-  field. Adapter-private gaps the memory adapter intentionally
-  leaves open are listed at the bottom of decisions.md's "Outbox
-  Adapter Package" section.
+- **pgx-Postgres Outbox** (`eventbus/outbox/pgx`):
+  **PR-ready, branch `feat/outbox-pgx-adapter` at `d1db48c`,
+  awaiting push + GitHub PR creation + CI green + review**. See
+  Current Status above for the cycle summary. Open follow-ups
+  intentionally NOT in this PR's scope:
+  - `examples/orders` outbox wiring against the pgx Store
+    (separate cycle; needs docker-compose Postgres service, pgxrepo
+    for aggregate persistence, end-to-end integration test).
+  - `LISTEN/NOTIFY` push-based delivery variant (future cycle if
+    needed).
+  - `claim_id`-based worker attribution — current lease model
+    answers "is this row claimed?" via wall-clock `claimed_until`
+    only, NOT "WHICH worker holds it". Multi-Relay across many
+    hosts is supported (SKIP LOCKED), operator visibility into
+    worker identity is the scoped-out piece.
+  - `eventbus/inbox/pgx` adapter (separate cycle).
 - **`examples/orders` outbox wiring** (optional follow-up): closes the
   "no outbox" shortcut documented in the example; gated on whether the
   team wants the memory adapter on the demo path or prefers waiting
@@ -97,7 +129,7 @@ read, `git tag -l`, GitHub Release inspection, and a cross-check against
 
 ## Verification
 
-Last green run (PR #11 CI, 2026-05-19 — release prep):
+Last green CI run (PR #11, 2026-05-19 — release prep):
 
 - `go test ./...` PASS (root + `examples/orders`).
 - `go test -race ./eventbus/outbox/...` PASS locally before push.
@@ -106,6 +138,18 @@ Last green run (PR #11 CI, 2026-05-19 — release prep):
 - Tag `v0.3.0` cut at `3ce2a23` (same tree as PR #11 merge); no
   separate CI on the tag itself, but the underlying commit is the
   green-CI artifact of PR #11.
+
+Pre-push local verification on `feat/outbox-pgx-adapter` at `d1db48c`
+(2026-05-20 evening):
+
+- `go test -race ./...` PASS.
+- `go build -tags=integration ./...` clean.
+- `golangci-lint run --build-tags=integration ./...` 0 issues.
+- Container-driven integration tests (testcontainers Postgres + redpanda)
+  not run locally (no Docker provider available in this environment);
+  deferred to CI's `integration-test` job which now also runs the pgx
+  step added in `c028ef3`. CI verdict will be the green-CI artifact
+  once the branch is pushed and PR is opened.
 
 Default verification before any release-related work:
 

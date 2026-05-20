@@ -1,7 +1,7 @@
 # Build stage — compiles all three example binaries from the local module.
 # The build context is `..` (parent dir) so we can pick up the adapter root
 # referenced via the example's `replace` directive.
-FROM golang:1.24-alpine AS build
+FROM golang:1.25-alpine AS build
 
 WORKDIR /src
 
