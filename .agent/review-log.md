@@ -1,6 +1,6 @@
 # go-ddd-adapters Review Log
 
-Last verified: 2026-05-20 Asia/Taipei (afternoon, mid-flight on `feat/outbox-pgx-adapter`)
+Last verified: 2026-05-20 Asia/Taipei (evening, end of `feat/outbox-pgx-adapter` cycle, PR-ready before push)
 
 ## Recent Findings
 
@@ -49,6 +49,24 @@ Last verified: 2026-05-20 Asia/Taipei (afternoon, mid-flight on `feat/outbox-pgx
   modify `available_at`, so `updated.available_at` equals the value
   `due` selected on. Simpler than the JOIN-back form because
   `updated` already RETURNs every column the Store needs.
+- `0655989` (pgx docs sweep): README `### Postgres Outbox + Relay`
+  operational-properties bullet said "concurrent Relays partition the
+  active backlog row-by-row", which can read as load-balancing even
+  with the subsequent fairness disclaimer. Closed by `d1db48c` —
+  README now says "concurrent Relays claim disjoint rows" matching
+  the no-overlap invariant verbatim; `sql.go` fetchSQL header comment
+  follows the same tighten. CHANGELOG's "no-overlap, not fair
+  partitioning" kept as a negative-form disavowal.
+- **`feat/outbox-pgx-adapter` branch as a whole (11 commits, HEAD
+  `d1db48c`)**: pgx-Postgres Outbox + pgx TxManager + integration
+  tests + CI extension + docs sweep. Implements v0.4.0 plan locked
+  at `~/.claude/plans/outbox-relay-agile-orbit.md` revision 5. Two
+  Codex review rounds during implementation surfaced three Findings,
+  all closed in-band (CI coverage gap → `c028ef3`; Fetch row order →
+  `fde15ce`; SKIP LOCKED wording → `d1db48c`). Status: PR-ready,
+  awaiting push + `gh pr create` + CI green + maintainer review.
+  Once PR is opened, follow-up review trigger fires on any new
+  comments / requested changes.
 
 ## Current Open Review Items
 
