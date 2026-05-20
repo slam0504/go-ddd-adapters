@@ -9,32 +9,47 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.3.0` is the first tagged release on the v0.3.x line and aligns
+`v0.3.0` is the latest tagged release on the v0.3.x line and aligns
 this repo with `go-ddd-core v0.3.0`. v0.3.0 brings the in-process
 `Memory` Inbox (relocated from core) and the new in-process Outbox +
 Relay (with adapter-private DLQ and a kafka header-restorer bridge),
 plus the unchanged Kafka publisher/subscriber/codec, slog logger, and
 OpenTelemetry provider that already shipped in `v0.2.0`. The `Memory`
-Outbox is explicitly a non-transactional test/dev adapter — production
-users need the forthcoming SQL/pgx successor.
+Outbox is explicitly a non-transactional test/dev adapter.
+
+`main` (heading into the v0.4.0 cycle) adds the production-ready pgx
+successor: the `eventbus/outbox/pgx` package implements a
+transactional Outbox + OutboxStore + DLQ backed by Postgres 12+ via
+pgx/v5, paired with `ports/database/pgx` providing the
+`database.TxManager` adapter that lets `Stage` participate in the
+caller's database transaction.
 
 | Adapter | Port | Backing tech |
 | --- | --- | --- |
 | `eventbus/kafka` | `eventbus.Publisher`, `eventbus.Subscriber`, `eventbus.Codec` | [watermill-kafka v3][wmk] (Sarama) |
 | `eventbus/inbox` | `eventbus.Inbox` | in-process map (`Memory`) with optional `WithMaxSize` and `WithTTL` eviction |
 | `eventbus/outbox` | `eventbus.Outbox`, `eventbus.OutboxStore`, `eventbus.Relay` | in-process `Memory` + polling `Relay` — **non-transactional test/dev adapter, not for production** |
+| `eventbus/outbox/pgx` | `eventbus.Outbox`, `eventbus.OutboxStore`, `outbox.DeadLetterRecorder` | [pgx/v5][pgx] + Postgres 12+; lease-based claim with `FOR UPDATE SKIP LOCKED`, separate `outbox_dead_letters` table, safe for multiple Relay instances |
+| `ports/database/pgx` | `database.TxManager` | [pgx/v5][pgx] pool + ctx-bound transaction handle (`pgxdb.WithTx` / `pgxdb.TxFromContext` / `pgxdb.Executor`) |
 | `logger/slogger` | `logger.Logger` | `log/slog` (stdlib) |
 | `observability/otel` | `observability.Provider` | OpenTelemetry SDK v1.32 |
 
 [wmk]: https://github.com/ThreeDotsLabs/watermill-kafka
+[pgx]: https://github.com/jackc/pgx
 
 ## Compatibility matrix
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
-| `main` (post-`v0.3.0`) | `v0.3.x` | `>= 1.24` |
+| `main` (post-`v0.3.0`) | `v0.3.x` | `>= 1.25` |
 | `v0.3.0` | `v0.3.0` | `>= 1.24` |
 | `v0.2.x` | `v0.2.x` | `>= 1.24` |
+
+`main` bumped the Go floor from 1.24 to 1.25 when adding the
+`eventbus/outbox/pgx` adapter — its dependency tree
+(`pgx/v5 v5.9.2`, `testcontainers-go v0.42.0`,
+`golang-migrate/v4 v4.19.1`, current OpenTelemetry releases) requires
+`go 1.25.0`. Tagged `v0.3.x` and `v0.2.x` are unaffected.
 
 ## Install
 
@@ -128,6 +143,69 @@ app.Use(outbox.RelayModule(relay, log))
 Records that exceed `WithMaxAttempts` are moved to an adapter-private
 dead-letter quarantine; inspect via `ob.DeadLettered()`.
 
+### Postgres Outbox + Relay (`eventbus/outbox/pgx`)
+
+The pgx adapter is the production-shaped Outbox: `Stage` runs inside
+the caller's database transaction, so aggregate persistence and event
+staging commit (or roll back) atomically. The same `outbox.Relay`
+drains the active table.
+
+```go
+pool, err := pgxpool.New(ctx, "postgres://user:pass@host:5432/db")
+if err != nil { /* handle */ }
+defer pool.Close()
+
+tm := pgxdb.NewTxManager(pool)
+
+codec := kafka.NewJSONCodec()
+codec.Register("order.placed.v1", func() domain.DomainEvent { return &OrderPlaced{} })
+
+store, _ := pgxoutbox.NewStore(pgxoutbox.Config{Pool: pool, Codec: codec},
+    pgxoutbox.WithClaimLease(10*time.Second),
+)
+
+// Producer side — aggregate save AND Stage commit together. Stage
+// reads the *pgx.Tx out of ctx and refuses (ErrNoTx) if there is
+// none. No silent autocommit.
+err = tm.WithinTx(ctx, func(ctx context.Context) error {
+    if err := repo.Save(ctx, agg); err != nil { return err }
+    return store.Stage(ctx, "orders", agg.PullEvents()...)
+})
+
+// Relay side — drains the active table; identical wiring to the
+// memory Relay (decision: Relay is driver-agnostic).
+pub, _ := kafka.NewPublisher(kafka.PublisherConfig{Brokers: []string{"kafka:9092"}, Codec: codec})
+relay, _ := outbox.NewRelay(outbox.RelayConfig{
+    Store: store, Publisher: pub, Codec: codec, Logger: log,
+},
+    outbox.WithMaxAttempts(10),
+    outbox.WithHeaderRestorer(kafka.RestoreCoreHeaders),
+)
+```
+
+Operational properties:
+
+- **Transactional Stage.** `Stage` requires a `pgx.Tx` in ctx (put
+  there by `pgxdb.TxManager.WithinTx`); otherwise it returns
+  `pgxoutbox.ErrNoTx`. Aggregate save + event stage are atomic.
+- **Safe for multiple Relay instances.** Fetch claims disjoint rows
+  using `FOR UPDATE SKIP LOCKED`; concurrent Relays partition the
+  active backlog row-by-row. There is no fairness guarantee — one
+  Relay can claim more rows than another in any given drain pass —
+  only the no-overlap invariant.
+- **At-least-once delivery.** Lease expiry, slow `Publisher.Publish`,
+  or a worker crash between Publish and MarkSent can produce
+  duplicate publishes. Downstream consumers MUST deduplicate via
+  `eventbus/inbox` (or equivalent) keyed on `OutboxRecord.EventID`.
+  Tuning `WithClaimLease` reduces the duplicate window but does NOT
+  eliminate it — never claim exactly-once.
+- **Postgres baseline 12+.** Migration `001` includes
+  `CREATE EXTENSION IF NOT EXISTS pgcrypto` so `gen_random_uuid()` is
+  available on 12 (no-op on 13+).
+- **Schema is yours.** The adapter ships the SQL files and an
+  `embed.FS` for tests, but does NOT run migrations at runtime — see
+  the [Migrations](#migrations) section.
+
 ### Slog logger
 
 ```go
@@ -148,6 +226,35 @@ defer prov.Shutdown(ctx)
 
 tr := prov.Tracer("billing")
 ```
+
+## Migrations
+
+The `eventbus/outbox/pgx` adapter ships its Postgres schema as
+versioned `.up.sql` / `.down.sql` files under
+`eventbus/outbox/pgx/migrations/`. The adapter does NOT run
+migrations at runtime — schema management is the caller's
+responsibility.
+
+Canonical command using [golang-migrate][gm]:
+
+```sh
+migrate -path eventbus/outbox/pgx/migrations \
+        -database "postgres://user:pass@host:5432/db?sslmode=disable" \
+        up
+```
+
+The same SQL files work with [goose][goose], [atlas][atlas],
+[flyway][flyway], or any tool that consumes numerically-prefixed
+versioned SQL — pick whatever already exists in your stack.
+
+For tests and example wiring, the adapter exposes the embedded files
+via `eventbus/outbox/pgx/migrations.FS` (an `embed.FS`), usable with
+golang-migrate's `iofs` source driver.
+
+[gm]: https://github.com/golang-migrate/migrate
+[goose]: https://github.com/pressly/goose
+[atlas]: https://atlasgo.io
+[flyway]: https://flywaydb.org
 
 ## License
 

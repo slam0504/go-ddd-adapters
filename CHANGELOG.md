@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Postgres Outbox (`eventbus/outbox/pgx`)
+- New production-ready Outbox adapter implementing
+  `eventbus.Outbox` + `eventbus.OutboxStore` + the local
+  `outbox.DeadLetterRecorder` extension over pgx/v5 and Postgres 12+.
+  Closes the five limitations the in-process `Memory` adapter shipped
+  with (non-transactional `Stage`, no durable `last_error`, no
+  multi-Relay safety, no separate DLQ table, the
+  `WithMaxSize`/`WithIDGenerator`/`WithClock` knobs that do not carry
+  over to a SQL store).
+- `Stage` requires a `pgx.Tx` in ctx via `ports/database/pgx` —
+  returns `pgxoutbox.ErrNoTx` otherwise. No silent autocommit.
+- `Fetch` claims due rows under `FOR UPDATE SKIP LOCKED`, stamps a
+  fresh `claim_token` (`gen_random_uuid()`) and a lease window per
+  row in a single statement. Safe for multiple Relay instances; the
+  invariant is no-overlap, not fair partitioning.
+- `MarkSent` / `MarkFailed` / `Terminate` all guard on
+  `claim_token`. Stale workers (lease expired and re-claimed by
+  another Relay) hit zero rows and return nil silently. Terminate is
+  atomic via a single `DELETE ... RETURNING` CTE that feeds the
+  `outbox_dead_letters` table.
+- `OutboxRecord.ID` is `"<dbid>:<UUID>"`; malformed input to Mark* /
+  Terminate returns `pgxoutbox.ErrMalformedID` (programmer-error
+  path).
+- `WithClaimLease(d)` option, default `5s`, lower bound `100ms`.
+- **At-least-once delivery contract.** Lease expiry / slow publisher
+  / worker crash between Publish and MarkSent can cause duplicate
+  publishes; consumers must dedup via `eventbus/inbox` (or
+  equivalent) keyed on `OutboxRecord.EventID`. Tuning the lease
+  reduces the window but does not eliminate it.
+- `migrations.FS` exposes the schema as an `embed.FS` for tests;
+  production callers run the SQL via their existing tooling
+  (golang-migrate / goose / atlas / flyway).
+
+#### Postgres TxManager (`ports/database/pgx`)
+- New package providing `pgxdb.TxManager`, satisfying
+  `go-ddd-core/ports/database.TxManager` on top of a `*pgxpool.Pool`.
+  `WithinTx(ctx, fn)` opens a tx, injects it into ctx under a
+  package-private key, commits on `fn` nil return, rolls back on
+  non-nil error or panic (and re-panics).
+- `WithTxOptions(pgx.TxOptions{...})` sets the TxManager-level
+  default isolation / access mode. Per-call override is intentionally
+  not supported (core's `TxManager.WithinTx` contract has no options
+  slot).
+- `pgxdb.WithTx` / `pgxdb.TxFromContext` / `pgxdb.Executor` helpers
+  let adapter code read or fall through to the pool without caring
+  whether the caller is currently inside a tx. `pgxdb.ErrNoTx` is
+  the sentinel returned by code that requires a tx in ctx.
+
+### Changed
+
+- **Go floor bumped from 1.24 → 1.25** for the adapter root module.
+  Required by the pgx adapter's dependency tree (`pgx/v5 v5.9.2`,
+  `testcontainers-go v0.42.0`, `golang-migrate/v4 v4.19.1`, current
+  OpenTelemetry releases). Tagged `v0.3.x` and `v0.2.x` are
+  unaffected. CI's `actions/setup-go` and the `examples/orders`
+  Dockerfile (`golang:1.25-alpine`) follow the bump.
+
 ## [v0.3.0] - 2026-05-19
 
 First tagged release on the v0.3.x line. Aligns adapters with
