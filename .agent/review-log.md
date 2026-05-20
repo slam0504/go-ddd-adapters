@@ -38,6 +38,18 @@ Last verified: 2026-05-20 Asia/Taipei (afternoon, mid-flight on `feat/outbox-pgx
   upcoming Store implementation / integration test commits so they
   do not accumulate on top of unverified test infrastructure.
 
+- `9f610ce` (pgx Store implementation): `fetchSQL` selected due rows
+  with `ORDER BY available_at, id` inside the CTE, but the outer
+  `UPDATE ... RETURNING` has no guaranteed row order — package
+  comments and the planned integration tests treat Fetch as ordered,
+  so without a fix the order would be nondeterministic in practice.
+  Closed by this commit: `fetchSQL` is now a three-stage CTE (`due`
+  → `updated` → outer `SELECT ... ORDER BY available_at, id`). The
+  outer SELECT re-applies the lock order because UPDATE does not
+  modify `available_at`, so `updated.available_at` equals the value
+  `due` selected on. Simpler than the JOIN-back form because
+  `updated` already RETURNs every column the Store needs.
+
 ## Current Open Review Items
 
 - None.

@@ -18,11 +18,30 @@ const (
 	// only this constant.
 	stageColumns = "event_id, topic, event_name, aggregate_id, aggregate_type, payload, headers, created_at, available_at"
 
-	// fetchSQL is a single CTE round trip: select due rows under FOR
-	// UPDATE SKIP LOCKED, then UPDATE them to set a fresh lease window
-	// and a fresh claim_token, RETURNING enough to build OutboxRecord.
-	// Token is returned as ::text so we never need google/uuid on the
-	// wire — adapter-private opaque string in OutboxRecord.ID.
+	// fetchSQL is a single statement, three-stage CTE:
+	//
+	//   1. `due` selects up to $1 due rows under FOR UPDATE SKIP
+	//      LOCKED, ordered by (available_at, id) — this is the lock
+	//      order. Multiple Relays converging on the same backlog
+	//      partition the work via SKIP LOCKED.
+	//   2. `updated` stamps a fresh claim_token + lease window on
+	//      each locked row and RETURNs the full row.
+	//   3. The outer SELECT projects the columns the Store needs and
+	//      re-applies `ORDER BY available_at, id`.
+	//
+	// The outer ORDER BY matters because PostgreSQL's UPDATE ...
+	// RETURNING does NOT preserve the CTE's row order — RETURNING
+	// emits rows in implementation-defined order (typically heap
+	// scan), independent of any ORDER BY upstream. Without the outer
+	// SELECT, Fetch results would be nondeterministically ordered
+	// even though `due` picks rows in a fixed sequence. UPDATE
+	// touches only claimed_until / claim_token, so `available_at` in
+	// `updated` is the same value the lock-order in `due` used; the
+	// outer ORDER BY is therefore equivalent to the lock order.
+	//
+	// claim_token is returned via the ::text cast so the Go side
+	// never has to depend on a UUID library — the token stays an
+	// opaque string in the adapter-private OutboxRecord.ID encoding.
 	fetchSQL = `WITH due AS (
     SELECT id FROM outbox_records
     WHERE available_at <= now()
@@ -30,24 +49,40 @@ const (
     ORDER BY available_at, id
     LIMIT $1
     FOR UPDATE SKIP LOCKED
+),
+updated AS (
+    UPDATE outbox_records
+    SET claimed_until = now() + $2::interval,
+        claim_token   = gen_random_uuid()
+    FROM due
+    WHERE outbox_records.id = due.id
+    RETURNING outbox_records.id,
+              outbox_records.claim_token,
+              outbox_records.event_id,
+              outbox_records.topic,
+              outbox_records.event_name,
+              outbox_records.aggregate_id,
+              outbox_records.aggregate_type,
+              outbox_records.payload,
+              outbox_records.headers,
+              outbox_records.created_at,
+              outbox_records.available_at,
+              outbox_records.attempts
 )
-UPDATE outbox_records
-SET claimed_until = now() + $2::interval,
-    claim_token   = gen_random_uuid()
-FROM due
-WHERE outbox_records.id = due.id
-RETURNING outbox_records.id,
-          outbox_records.claim_token::text,
-          outbox_records.event_id,
-          outbox_records.topic,
-          outbox_records.event_name,
-          outbox_records.aggregate_id,
-          outbox_records.aggregate_type,
-          outbox_records.payload,
-          outbox_records.headers,
-          outbox_records.created_at,
-          outbox_records.available_at,
-          outbox_records.attempts`
+SELECT id,
+       claim_token::text,
+       event_id,
+       topic,
+       event_name,
+       aggregate_id,
+       aggregate_type,
+       payload,
+       headers,
+       created_at,
+       available_at,
+       attempts
+FROM updated
+ORDER BY available_at, id`
 
 	// markSentSQL deletes the row only when the supplied claim_token
 	// still matches — stale workers (whose lease expired and was

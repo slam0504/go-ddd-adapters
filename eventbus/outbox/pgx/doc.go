@@ -33,19 +33,23 @@
 // # Fetch / claim model
 //
 // Fetch is a short-tx, lease-based claim (the "Option A" pattern in
-// the adapter `.agent/decisions.md`). One CTE round trip:
+// the adapter `.agent/decisions.md`). Single statement, three-stage
+// CTE:
 //
-//	WITH due AS (SELECT id ... ORDER BY available_at, id LIMIT $1 FOR UPDATE SKIP LOCKED)
-//	UPDATE outbox_records
-//	SET claimed_until = now() + lease, claim_token = gen_random_uuid()
-//	FROM due WHERE outbox_records.id = due.id RETURNING ...
+//	WITH due AS (SELECT id ... ORDER BY available_at, id LIMIT $1 FOR UPDATE SKIP LOCKED),
+//	     updated AS (UPDATE outbox_records SET claimed_until = ..., claim_token = gen_random_uuid()
+//	                 FROM due WHERE outbox_records.id = due.id RETURNING ...)
+//	SELECT ... FROM updated ORDER BY available_at, id
 //
-// `FOR UPDATE SKIP LOCKED` makes concurrent Relay instances safe
-// across processes / hosts. Each claimed row gets a fresh UUID
-// `claim_token`; the Store encodes the token into OutboxRecord.ID as
-// `"<dbid>:<UUID>"` so subsequent MarkSent / MarkFailed / Terminate
-// calls can guard on it. The core OutboxStore interface stays
-// id-only.
+// The outer SELECT is load-bearing: PostgreSQL's `UPDATE ...
+// RETURNING` does not preserve the inner CTE's row order, so the
+// re-applied `ORDER BY available_at, id` is what makes Fetch results
+// deterministic. `FOR UPDATE SKIP LOCKED` makes concurrent Relay
+// instances safe across processes / hosts. Each claimed row gets a
+// fresh UUID `claim_token`; the Store encodes the token into
+// OutboxRecord.ID as `"<dbid>:<UUID>"` so subsequent MarkSent /
+// MarkFailed / Terminate calls can guard on it. The core
+// OutboxStore interface stays id-only.
 //
 // # At-least-once delivery
 //
