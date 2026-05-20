@@ -9,20 +9,22 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.3.0` is the latest tagged release on the v0.3.x line and aligns
-this repo with `go-ddd-core v0.3.0`. v0.3.0 brings the in-process
-`Memory` Inbox (relocated from core) and the new in-process Outbox +
-Relay (with adapter-private DLQ and a kafka header-restorer bridge),
-plus the unchanged Kafka publisher/subscriber/codec, slog logger, and
-OpenTelemetry provider that already shipped in `v0.2.0`. The `Memory`
-Outbox is explicitly a non-transactional test/dev adapter.
+`v0.4.0` is the latest tagged release and the production-shaped
+Outbox milestone. It adds `eventbus/outbox/pgx` (transactional
+Outbox + OutboxStore + DLQ backed by Postgres 12+ via pgx/v5) paired
+with `ports/database/pgx` (the `database.TxManager` adapter that lets
+`Stage` participate in the caller's database transaction). Closes all
+five limitations the in-process `Memory` outbox shipped with in
+v0.3.0; the `Memory` outbox remains available for tests and demos.
+`v0.4.0` bumps the Go floor from 1.24 to 1.25 (required by the pgx
+dependency tree).
 
-`main` (heading into the v0.4.0 cycle) adds the production-ready pgx
-successor: the `eventbus/outbox/pgx` package implements a
-transactional Outbox + OutboxStore + DLQ backed by Postgres 12+ via
-pgx/v5, paired with `ports/database/pgx` providing the
-`database.TxManager` adapter that lets `Stage` participate in the
-caller's database transaction.
+`v0.3.0` remains available on the v0.3.x line and aligns this repo
+with `go-ddd-core v0.3.0`. It brings the in-process `Memory` Inbox
+(relocated from core) and the new in-process Outbox + Relay (with
+adapter-private DLQ and a kafka header-restorer bridge), plus the
+unchanged Kafka publisher/subscriber/codec, slog logger, and
+OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | Adapter | Port | Backing tech |
 | --- | --- | --- |
@@ -41,11 +43,12 @@ caller's database transaction.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
-| `main` (post-`v0.3.0`) | `v0.3.x` | `>= 1.25` |
+| `main` (post-`v0.4.0`) | `v0.3.x` | `>= 1.25` |
+| `v0.4.0` | `v0.3.0` | `>= 1.25` |
 | `v0.3.0` | `v0.3.0` | `>= 1.24` |
 | `v0.2.x` | `v0.2.x` | `>= 1.24` |
 
-`main` bumped the Go floor from 1.24 to 1.25 when adding the
+`v0.4.0` bumped the Go floor from 1.24 to 1.25 when adding the
 `eventbus/outbox/pgx` adapter — its dependency tree
 (`pgx/v5 v5.9.2`, `testcontainers-go v0.42.0`,
 `golang-migrate/v4 v4.19.1`, current OpenTelemetry releases) requires
