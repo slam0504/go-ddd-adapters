@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-05-20
+
+The production-shaped Outbox. Closes all five limitations the
+in-process `Memory` outbox shipped with in `v0.3.0`: real transactional
+`Stage`, durable `last_error`, multi-Relay safety via `FOR UPDATE SKIP
+LOCKED`, separate `outbox_dead_letters` DLQ table, and a `claim_token`
+UUID guard that eliminates the stale-worker write window. Paired with a
+new `ports/database/pgx` `TxManager` so `Stage` participates in the
+caller's database transaction the way the core contract requires. No
+breaking changes to the v0.3.0 surface; the in-process `Memory` outbox
+remains available alongside the pgx successor.
+
 ### Added
 
 #### Postgres Outbox (`eventbus/outbox/pgx`)
@@ -172,5 +184,6 @@ are new packages or new exported symbols.
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.2.0...v0.3.0
