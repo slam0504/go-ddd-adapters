@@ -188,11 +188,10 @@ Operational properties:
 - **Transactional Stage.** `Stage` requires a `pgx.Tx` in ctx (put
   there by `pgxdb.TxManager.WithinTx`); otherwise it returns
   `pgxoutbox.ErrNoTx`. Aggregate save + event stage are atomic.
-- **Safe for multiple Relay instances.** Fetch claims disjoint rows
-  using `FOR UPDATE SKIP LOCKED`; concurrent Relays partition the
-  active backlog row-by-row. There is no fairness guarantee — one
-  Relay can claim more rows than another in any given drain pass —
-  only the no-overlap invariant.
+- **Safe for multiple Relay instances.** `Fetch` uses `FOR UPDATE
+  SKIP LOCKED`; concurrent Relays claim disjoint rows. There is no
+  fairness guarantee — one Relay can claim more rows than another in
+  any given drain pass — only the no-overlap invariant.
 - **At-least-once delivery.** Lease expiry, slow `Publisher.Publish`,
   or a worker crash between Publish and MarkSent can produce
   duplicate publishes. Downstream consumers MUST deduplicate via

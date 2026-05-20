@@ -23,7 +23,8 @@ const (
 	//   1. `due` selects up to $1 due rows under FOR UPDATE SKIP
 	//      LOCKED, ordered by (available_at, id) — this is the lock
 	//      order. Multiple Relays converging on the same backlog
-	//      partition the work via SKIP LOCKED.
+	//      claim disjoint rows via SKIP LOCKED (no overlap; no
+	//      fairness guarantee).
 	//   2. `updated` stamps a fresh claim_token + lease window on
 	//      each locked row and RETURNs the full row.
 	//   3. The outer SELECT projects the columns the Store needs and
