@@ -258,20 +258,153 @@ transitive deps.
 
 ### Limitations the pgx successor MUST address
 
-Tracked here so the follow-up cycle doesn't re-discover them:
+Tracked here so the follow-up cycle doesn't re-discover them. **All
+five are CLOSED in the pgx Outbox Adapter Package section below
+(2026-05-20).**
 
-1. Real transactional Stage (read tx handle from ctx, write the
-   outbox row in the same DB tx that persists the aggregate).
-2. Durable `last_error` column for `MarkFailed.reason` operator
-   visibility.
-3. Multi-Relay safety via `SELECT FOR UPDATE SKIP LOCKED` (or
-   equivalent claim/lease primitive).
-4. DLQ as a separate table or `is_dead_lettered` column, with the
-   same `Attempts` terminal field.
-5. Migration story for the `eventbus/outbox` `MemoryConfig` API
-   surface — the same `WithMaxSize` / `WithIDGenerator` /
-   `WithClock` knobs probably do NOT carry over verbatim because
-   pgx has different concurrency primitives.
+1. ~~Real transactional Stage~~ ✅ pgx decision #11: Stage reads tx
+   handle from ctx via `pgxdb.TxFromContext`; absent → `ErrNoTx`.
+2. ~~Durable `last_error` column~~ ✅ pgx schema:
+   `outbox_records.last_error TEXT NULL` populated by MarkFailed.
+3. ~~Multi-Relay safety via SKIP LOCKED~~ ✅ pgx decision #10 + #21:
+   `SELECT ... FOR UPDATE SKIP LOCKED` claim model with `claim_token`
+   guard against stale worker writes.
+4. ~~DLQ as a separate table with terminal `Attempts`~~ ✅ pgx decision
+   #4: `outbox_dead_letters` with `attempts INTEGER NOT NULL` storing
+   `active.attempts + 1` (terminal count).
+5. ~~Memory's `WithMaxSize` / `WithIDGenerator` / `WithClock` knobs do
+   NOT carry over~~ ✅ pgx adapter exposes only `WithClaimLease(d)`;
+   memory-specific knobs are intentionally absent.
+
+## pgx Outbox Adapter Package (`eventbus/outbox/pgx` + `ports/database/pgx`)
+
+Locked 2026-05-20 after four plan revisions and three Codex review
+rounds. The 23 decisions below are the source of truth for the pgx
+implementation; see `<workspace-root>/.claude/plans/outbox-relay-agile-orbit.md`
+for the long-form plan with rationale tables.
+
+### Surface
+
+- `ports/database/pgx` (package `pgxdb`): `TxManager` implementing
+  core's `ports/database.TxManager`, `WithTx`/`TxFromContext`/`Executor`
+  helpers, `ErrNoTx`. Pool-based; `WithTxOptions(pgx.TxOptions)` sets
+  TxManager-level default isolation/access mode.
+- `eventbus/outbox/pgx` (package `pgxoutbox`): `Store` implementing
+  `eventbus.Outbox` + `eventbus.OutboxStore` + `outbox.DeadLetterRecorder`.
+  Re-exports `ErrNoTx` from pgxdb. Adds `ErrMalformedID` for the
+  adapter-private id encoding.
+- `eventbus/outbox/pgx/migrations`: versioned SQL files +
+  `//go:embed *.sql ⇒ migrations.FS` for testcontainers / example use.
+  Adapter does NOT ship a runtime `Migrate(ctx, db)` API.
+- `internal/pgxtest`: shared testcontainers Postgres boot helper for
+  this module's integration tests. Not exported (Go internal/ rule).
+
+### Locked decisions (23)
+
+1. **pgx/v5 native** (`*pgxpool.Pool` / `pgx.Tx`); no database/sql shim.
+2. **Schema = versioned SQL files** under
+   `eventbus/outbox/pgx/migrations/`. No runtime `Migrate(ctx, db)`
+   as primary API.
+3. **Bundle `ports/database/pgx` + `eventbus/outbox/pgx` in one PR.**
+4. **Separate DLQ table** `outbox_dead_letters`. Terminate is atomic
+   via `DELETE ... RETURNING` CTE (see #23).
+5. **Package names** `pgxdb` and `pgxoutbox` to avoid alias clash with
+   `github.com/jackc/pgx/v5`.
+6. **TxManager-level default `pgx.TxOptions`** via
+   `pgxdb.WithTxOptions(...)`. No per-call override (core contract has
+   no slot).
+7. **`examples/orders` wiring is OUT of scope** (next PR; same posture
+   as memory PR #9).
+8. **README migration docs** canonical `golang-migrate` snippet + one
+   line "the same SQL works with goose / atlas / flyway".
+9. **Postgres baseline = 12+** (IDENTITY, SKIP LOCKED, gen_random_uuid
+   via pgcrypto on 12 — see #16). `postgres:16-alpine` for tests.
+10. **Claim model = lease-based, short tx**. Fetch issues a fresh
+    `claim_token` per row and sets `claimed_until = now() + lease`.
+    `process()` does NOT hold a row lock. Mark*/Terminate run as
+    independent short tx via pool.
+11. **`Stage` without ctx tx = `ErrNoTx`** (hard error, no implicit
+    autocommit).
+12. **`OutboxRecord.ID` boundary type**: DB `id` is `BIGINT IDENTITY`;
+    surfaced to core interface as opaque string per #21.
+13. **`payload = BYTEA`, `headers = JSONB`.**
+14. **Lease default = `5 × PollInterval`** (5s default).
+    `WithClaimLease(d)` overrides; lower bound 100ms.
+15. **Relay reuse**: this PR does NOT introduce a new Relay. Existing
+    `eventbus/outbox.Relay` drives the pgx Store.
+16. **Mixed clock model, per-column ownership pinned.**
+    **DB clock**: `outbox_records.created_at` (Stage,
+    `clock_timestamp()`), `outbox_records.available_at` at Stage time
+    (`clock_timestamp()`), Fetch lease check + compute (`now()`),
+    MarkFailed `claimed_until = NULL` reset, Terminate
+    `failed_at = now()`. **Relay app clock**:
+    `outbox_records.available_at` when written by `MarkFailed` —
+    Relay computes `relay.now().Add(backoff(attempts+1))` and passes
+    the absolute timestamp into the Store, which writes verbatim.
+    **Why mixed**: `OutboxStore.MarkFailed(..., nextAttemptAt time.Time)`
+    is a core interface contract; rewriting it to be DB-clock-derived
+    would require touching core / Relay. Out of scope; doc.go
+    recommends NTP sync across Relay hosts AND DB host.
+17. **At-least-once is the explicit contract.** Lease expiry, slow
+    `Publisher.Publish`, network timeout, or worker crash can cause
+    duplicate publish. `OutboxRecord.EventID` is the broker message
+    id; downstream consumers MUST use `eventbus/inbox` (or
+    equivalent) for dedup.
+18. **Concrete dependency pins** (resolved via `go list -m -versions`
+    2026-05-19): `pgx/v5 v5.9.2`, `testcontainers-go v0.42.0`,
+    `testcontainers-go/modules/postgres v0.42.0`,
+    `golang-migrate/v4 v4.19.1` (+ `source/iofs`,
+    `database/pgx/v5`). Intentionally avoid `database/postgres`
+    (lib/pq).
+19. **`internal/pgxtest` shared helper** for testcontainers boot.
+    Each test package's own `TestMain` calls
+    `pgxtest.StartContainer(ctx)`.
+20. **`ports/database/pgx` integration tests use self-contained
+    `pgxdb_test_kv` table**, NOT outbox migrations.
+21. **`claim_token UUID` column on `outbox_records` + ID encoding
+    `"<dbid>:<UUID>"`.** Fetch generates `gen_random_uuid()` per
+    claimed row and returns it; `OutboxRecord.ID =
+    fmt.Sprintf("%d:%s", dbID, claimToken)`. Mark*/Terminate parse
+    the id and guard `AND claim_token = $token`. Stale worker calls
+    become 0-row no-ops. Core `OutboxStore` interface unchanged
+    (id-only); encoding is adapter-private (same opacity rule as
+    memory's `"mem-outbox-<n>"`).
+22. **Zero-row `MarkSent` / `MarkFailed` / `Terminate` = silent
+    success (return nil).** Matches memory adapter and the
+    at-least-once contract. Stale workers no-op silently.
+23. **`Terminate` atomic via single `DELETE ... RETURNING` CTE.**
+    `WITH del AS (DELETE FROM outbox_records WHERE id = $1 AND
+    claim_token = $2 RETURNING *) INSERT INTO outbox_dead_letters
+    (...) SELECT ..., attempts + 1, $3, now() FROM del;`. Only the
+    worker whose DELETE actually returned a row inserts into DLQ;
+    duplicate DLQ rows under concurrent stale Terminate are
+    impossible.
+
+### `gen_random_uuid()` on Postgres 12
+
+Postgres 13+ ships `gen_random_uuid()` as a built-in. For the 12+
+baseline (#9), migration `001_create_outbox_records.up.sql` issues
+`CREATE EXTENSION IF NOT EXISTS pgcrypto;` first. Postgres 13+
+treats the extension as no-op (already present). Avoids depending on
+`uuid-ossp` which adds more functions than needed.
+
+### Adapter-private gaps the pgx adapter intentionally leaves open
+
+(These belong to a future cycle, not the v0.4.0 PR.)
+
+- **`claim_id`-based worker attribution** for operator visibility into
+  WHICH worker holds a row. The current `claim_token` is opaque
+  (uniqueness-only); a future `claim_owner TEXT` column could carry a
+  human-readable worker identifier.
+- **`LISTEN/NOTIFY` push delivery** to skip polling latency. Polling
+  Relay is the only mode this PR ships.
+- **Per-call `pgx.TxOptions` override** for isolation/access mode.
+  Core's `database.TxManager.WithinTx` has no options slot.
+- **`MarkSent` audit row.** Successful sends are DELETEd, not moved
+  to a sent table. Broker / consumer side is the durable source of
+  truth for "what was sent."
+- **`eventbus/inbox/pgx`** — durable consumer-side inbox is a sibling
+  adapter, separate cycle.
 
 ## Pre-announced v0.4.0 Migration (status)
 
