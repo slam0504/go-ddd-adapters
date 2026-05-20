@@ -1,6 +1,6 @@
 # go-ddd-adapters Review Log
 
-Last verified: 2026-05-20 Asia/Taipei (evening, end of `feat/outbox-pgx-adapter` cycle, PR-ready before push)
+Last verified: 2026-05-20 Asia/Taipei (post PR #14 merge at `2e9e96d`)
 
 ## Recent Findings
 
@@ -57,16 +57,34 @@ Last verified: 2026-05-20 Asia/Taipei (evening, end of `feat/outbox-pgx-adapter`
   the no-overlap invariant verbatim; `sql.go` fetchSQL header comment
   follows the same tighten. CHANGELOG's "no-overlap, not fair
   partitioning" kept as a negative-form disavowal.
-- **`feat/outbox-pgx-adapter` branch as a whole (11 commits, HEAD
-  `d1db48c`)**: pgx-Postgres Outbox + pgx TxManager + integration
-  tests + CI extension + docs sweep. Implements v0.4.0 plan locked
-  at `~/.claude/plans/outbox-relay-agile-orbit.md` revision 5. Two
-  Codex review rounds during implementation surfaced three Findings,
-  all closed in-band (CI coverage gap → `c028ef3`; Fetch row order →
-  `fde15ce`; SKIP LOCKED wording → `d1db48c`). Status: PR-ready,
-  awaiting push + `gh pr create` + CI green + maintainer review.
-  Once PR is opened, follow-up review trigger fires on any new
-  comments / requested changes.
+- **`feat/outbox-pgx-adapter` branch merged via PR #14 at
+  `2e9e96d` (2026-05-20)**: pgx-Postgres Outbox + pgx TxManager +
+  integration tests + CI extension + docs sweep. 13 commits landed
+  (10 plan commits, 2 mid-flight review-driven fixes, 1 pre-push
+  go-mod-tidy chore). Implements v0.4.0 plan locked at
+  `~/.claude/plans/outbox-relay-agile-orbit.md` revision 6
+  (revision 6 records the PR #14 merge). Three Codex review
+  findings closed in-band:
+  - `c028ef3` — CI coverage gap raised against `40fe9aa`: new
+    `ports/database/pgx/*_integration_test.go` files were
+    `//go:build integration`-guarded but `integration-test` job
+    only ran `examples/orders`. Closed by pulling forward plan
+    commit 8 to extend the job with a root-module pgx step + bump
+    runner to Go 1.25.
+  - `fde15ce` — `fetchSQL` row-order bug raised against `9f610ce`:
+    `UPDATE ... RETURNING` has no guaranteed row order, so the
+    documented Fetch ordering would have been honoured only by
+    physical-layout accident. Closed by three-stage CTE
+    (`due` → `updated` → outer `SELECT ... ORDER BY available_at,
+    id`).
+  - `d1db48c` — SKIP LOCKED wording slip raised against
+    `0655989`: README's "concurrent Relays partition the active
+    backlog" read as load-balancing even with the fairness
+    disclaimer. Closed by tightening to "claim disjoint rows"
+    across README and `sql.go`.
+
+  CI 5/5 green first try at merge tip including the first ever pgx
+  testcontainers run against real Postgres (1m10s).
 
 ## Current Open Review Items
 
