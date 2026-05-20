@@ -1,27 +1,28 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-20 Asia/Taipei (post PR #14 merge, bookkeeping branch)
-Source: verified via `git log main --oneline -10`, `git tag -l`, and
-the merged PR #14 archive in `pgx_outbox_pr_in_flight.md`.
+Last verified: 2026-05-20 Asia/Taipei (post `v0.4.0` tag cut, bookkeeping branch)
+Source: verified via `git log main --oneline -10`, `git tag -l -n0`,
+and `gh release view v0.4.0`.
 
 ## Current Branch
 
-- main: `2e9e96d` (HEAD as of 2026-05-20, post PR #14 merge)
-- tags present in repo: `v0.1.0`, `v0.2.0`, **`v0.3.0`** (annotated,
-  pushed 2026-05-19 evening; GitHub Release marked Latest at
-  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.3.0).
-  `v0.3.0` points at merge commit `3ce2a23`.
+- main: `bc9b041` (HEAD as of 2026-05-20, post PR #16 merge)
+- tags present in repo: `v0.1.0`, `v0.2.0`, `v0.3.0`, **`v0.4.0`**
+  (annotated, pushed 2026-05-20; GitHub Release marked Latest at
+  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
+  `v0.4.0` points at merge commit `bc9b041`; `v0.3.0` points at
+  `3ce2a23`.
 - latest commits on `main`:
+  - `bc9b041` `Merge pull request #16 from slam0504/release/v0.4.0`
+  - `0e2edcc` `release(v0.4.0): pgx Outbox + pgx TxManager`
+  - `55c3bea` `Merge pull request #15 from slam0504/chore/post-v0.4.0-pgx-outbox-bookkeeping`
+  - `bd9e191` `chore(agent-memory): record v0.4.0 pgx outbox cycle CLOSED post PR #14`
   - `2e9e96d` `Merge pull request #14 from slam0504/feat/outbox-pgx-adapter`
   - `81a45bf` `chore(examples/orders): go mod tidy to follow adapter root dep bumps`
   - `b1ce6f1` `chore(agent-memory): mark pgx outbox cycle ready for review`
   - `d1db48c` `docs(outbox/pgx): tighten SKIP LOCKED wording ("partition" → "disjoint")`
   - `0655989` `docs(outbox/pgx): README adapter row + migration guide + CHANGELOG`
   - `698548a` `test(eventbus/outbox/pgx): integration tests`
-  - `fde15ce` `fix(eventbus/outbox/pgx): preserve Fetch row order via outer SELECT`
-  - `9f610ce` `feat(eventbus/outbox/pgx): Store implementation`
-  - `c028ef3` `ci: bump Go runner to 1.25 + add root pgx integration step`
-  - `40fe9aa` `test(ports/database/pgx): ctx helpers unit + TxManager integration`
 
 ## Current Status
 
@@ -43,12 +44,21 @@ the merged PR #14 archive in `pgx_outbox_pr_in_flight.md`.
   decisions recorded in decisions.md.
 - **`v0.3.0` release cycle is CLOSED** (PR #11 merged 2026-05-19
   evening, tag `v0.3.0` annotated at `3ce2a23`, GitHub Release
-  published as Latest). First tagged release on the v0.3.x line;
-  aligns adapters with `go-ddd-core v0.3.0`. Downstream services
-  can now pin via `go get
-  github.com/slam0504/go-ddd-adapters@v0.3.0`. The `[Unreleased]`
-  CHANGELOG section is the accumulator for the next cycle (v0.4.0
-  pgx outbox below).
+  published). First tagged release on the v0.3.x line; aligned
+  adapters with `go-ddd-core v0.3.0`. Downstream services can pin
+  via `go get github.com/slam0504/go-ddd-adapters@v0.3.0`.
+- **`v0.4.0` release cycle is CLOSED** (PR #16 merged 2026-05-20,
+  tag `v0.4.0` annotated at `bc9b041`, GitHub Release published as
+  Latest at https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
+  Ships pgx-Postgres Outbox + pgx TxManager (PR #14). Closes all
+  five memory-adapter limitations recorded in `.agent/decisions.md`
+  (real tx Stage, durable last_error, multi-Relay safety, separate
+  DLQ table, claim_token UUID stale-worker guard). Downstream
+  services can now pin via `go get
+  github.com/slam0504/go-ddd-adapters@v0.4.0`. Go floor bumped
+  1.24 → 1.25 on the adapter root; tagged v0.3.x and v0.2.x are
+  unaffected. The `[Unreleased]` CHANGELOG section is now the
+  accumulator for the next cycle.
 - **v0.4.0 pgx-Postgres outbox cycle is CLOSED** (PR #14 merged
   2026-05-20 at merge commit `2e9e96d`). New packages
   `eventbus/outbox/pgx` (transactional Outbox + OutboxStore + DLQ
@@ -86,20 +96,17 @@ the merged PR #14 archive in `pgx_outbox_pr_in_flight.md`.
 ## Open Items
 
 - **v0.4.0 core-side removal** (on `go-ddd-core`): physically removing
-  `eventbus/inbox/memory.go` is gated on two conditions, not one:
-  1. downstream services have migrated their import path from
-     `go-ddd-core/eventbus/inbox` to `go-ddd-adapters/eventbus/inbox`
-     (no inventory of consumers exists yet — user must surface the
-     list before migration can be planned), AND
-  2. **adapters has cut its next release after `v0.3.0`** — the
-     CHANGELOG promises `eventbus/inbox/memory.go` stays on core for
-     "one more release cycle", so the overlap window closes when the
-     adapters tag advances (likely the pgx outbox cycle). Until that
-     tag exists, removing the core copy would break the published
-     guarantee even if all known consumers had already migrated.
+  `eventbus/inbox/memory.go` is no longer gated by adapters'
+  release cadence — adapters' `v0.4.0` tag (cut 2026-05-20)
+  satisfies the CHANGELOG's "one more release cycle" promise.
+  Remaining gate: **downstream services have migrated their import
+  path** from `go-ddd-core/eventbus/inbox` to
+  `go-ddd-adapters/eventbus/inbox` (no inventory of consumers
+  exists yet — user must surface the list before migration can be
+  planned).
 
-  Not in adapters' scope to execute, but tracked here because both
-  gating conditions touch this repo's release cadence.
+  Not in adapters' scope to execute, but tracked here because the
+  v0.4.0 tag closes the second gating condition.
 - **pgx outbox cycle scoped-out follow-ups** (each its own future
   cycle, not gating the v0.4.0 cycle close):
   - `examples/orders` outbox wiring against the pgx Store
@@ -116,8 +123,9 @@ the merged PR #14 archive in `pgx_outbox_pr_in_flight.md`.
   "no outbox" shortcut documented in the example; gated on whether the
   team wants the memory adapter on the demo path or prefers waiting
   for pgx.
-- ~~adapters tag~~ ✅ done 2026-05-19: `v0.3.0` annotated tag pushed
-  to origin at `3ce2a23` with a GitHub Release marked Latest.
+- ~~adapters tag~~ ✅ done 2026-05-19 (`v0.3.0` at `3ce2a23`) +
+  2026-05-20 (`v0.4.0` at `bc9b041`, marked Latest at
+  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
 
 ## Verification
 
@@ -130,6 +138,11 @@ Last green CI run (PR #11, 2026-05-19 — release prep):
 - Tag `v0.3.0` cut at `3ce2a23` (same tree as PR #11 merge); no
   separate CI on the tag itself, but the underlying commit is the
   green-CI artifact of PR #11.
+- Tag `v0.4.0` cut at `bc9b041` (same tree as PR #16 merge); no
+  separate CI on the tag itself. PR #16 itself is a prose-only
+  release-prep diff (CHANGELOG + README) on top of `55c3bea`
+  which already carried the v0.4.0 feature surface (PR #14 + PR
+  #15); CI on PR #16 green at merge.
 
 PR #14 CI verdict at merge tip (`2e9e96d`, 2026-05-20):
 
