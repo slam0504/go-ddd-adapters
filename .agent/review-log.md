@@ -1,6 +1,6 @@
 # go-ddd-adapters Review Log
 
-Last verified: 2026-05-18 Asia/Taipei (afternoon, post PR #7 merge)
+Last verified: 2026-05-20 Asia/Taipei (afternoon, mid-flight on `feat/outbox-pgx-adapter`)
 
 ## Recent Findings
 
@@ -25,9 +25,19 @@ Last verified: 2026-05-18 Asia/Taipei (afternoon, post PR #7 merge)
   was actually `cancelled` (cancel-on-failure cascade), not a real
   lint issue — captured here so future debugging starts from raw
   job conclusion rather than the `gh pr checks` summary.
+- `40fe9aa` (pgx TxManager tests) initially landed with no CI
+  coverage: the new `ports/database/pgx/*_integration_test.go` files
+  are guarded by `//go:build integration` but the `integration-test`
+  job only ran `examples/orders`. Closed by this commit — the
+  `integration-test` job now also runs
+  `go test -tags=integration -race ./ports/database/pgx/...
+  ./eventbus/outbox/pgx/...` at the repo root, and the same change
+  bumps the CI runner to Go 1.25 (matching the adapter root
+  `go 1.25.0` already in `go.mod`). The original plan scheduled this
+  CI work as commit 8; it was pulled forward to land before the
+  upcoming Store implementation / integration test commits so they
+  do not accumulate on top of unverified test infrastructure.
 
 ## Current Open Review Items
 
-- None. Next review trigger is the next material change to adapters
-  (e.g., a new inbox/outbox SQL adapter, or core's removal of its
-  `eventbus/inbox/memory.go`).
+- None.
