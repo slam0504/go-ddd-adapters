@@ -232,7 +232,28 @@ func Hydrate(id ID, customerID string, status Status, version int64, totalCents 
 Inside `Hydrate`, items are defensively copied:
 `o.items = append([]Item(nil), items...)`. All existing callers update
 to the new signature. After the worker refactor (§6.3), the only
-caller is `pgxrepo.FindByID`.
+**production-path** caller is `pgxrepo.FindByID`; the integration test
+seed helper in §9.5 also calls `Hydrate` directly to bypass the outbox
+path.
+
+**`Item` struct gets JSON tags** so HTTP body decode (existing
+`cmd/api` curl flow with `price_cents` / `quantity` / `sku`) and
+JSONB column shape align:
+
+```go
+type Item struct {
+    SKU        string `json:"sku"`
+    Quantity   int    `json:"quantity"`
+    PriceCents int64  `json:"price_cents"`
+}
+```
+
+This fixes a pre-existing bug: Go's `encoding/json` is
+case-insensitive but does NOT normalise underscores, so JSON key
+`"price_cents"` does not match field `PriceCents` and silently
+decodes to 0. With pgxrepo entering the picture the JSONB column
+shape would also diverge from the HTTP wire shape, so the tags are
+required for round-trip consistency.
 
 `orderdom.Repository` interface is unchanged:
 
@@ -279,7 +300,19 @@ func (r *OrderRepository) Save(ctx context.Context, o *orderdom.Order) error {
 ```
 
 `FindByID` selects the same columns, unmarshals `items` JSONB, and
-returns `orderdom.Hydrate(...)`.
+returns `orderdom.Hydrate(...)`. **Not-found contract**: `pgx.ErrNoRows`
+MUST be mapped to `domain.ErrNotFound` (from `go-ddd-core/domain`) so
+the not-found semantic matches the existing `memrepo` behaviour and
+swapping repo implementations does not drift error meaning:
+
+```go
+err := exec.QueryRow(ctx, `SELECT ... FROM orders WHERE id=$1`, id).Scan(...)
+if errors.Is(err, pgx.ErrNoRows) {
+    return nil, domain.ErrNotFound
+}
+if err != nil { return nil, err }
+return orderdom.Hydrate(...), nil
+```
 
 ### 6.3 Handler refactor
 
@@ -819,7 +852,7 @@ example flow is unchanged from a user perspective.
 | # | commit | scope |
 | --- | --- | --- |
 | 0 | `docs(spec): brainstorm design for examples/orders pgx outbox demo` | this file |
-| 1 | `feat(examples/orders): add Postgres order repository + migrations` | `migrations/001_create_orders.{up,down}.sql`, `migrations/migrations.go` (embed.FS), `infra/pgxrepo/order_repo.go`, `Order.Hydrate(...items)` signature change with defensive copy, any domain test updates |
+| 1 | `feat(examples/orders): add Postgres order repository + migrations` | `migrations/001_create_orders.{up,down}.sql`, `migrations/migrations.go` (embed.FS), `infra/pgxrepo/order_repo.go` (incl. pgx.ErrNoRows → domain.ErrNotFound mapping in FindByID), `Order.Hydrate(...items)` signature change with defensive copy, `Item` json tags (`sku`/`quantity`/`price_cents`), any domain test updates |
 | 2 | `refactor(examples/orders): stage OrderPlaced through outbox` | `application/order/place_order.go` handler signature, `cmd/api/main.go` wiring (pgxpool, UoW, outbox.Stage, defer pool.Close), TestMain refactor to `run(m) int` pattern, `integration/place_order_test.go` happy + rollback |
 | 3 | `refactor(examples/orders): stage OrderShipped through outbox` | `application/order/ship_order.go` handler, `cmd/worker/main.go` wiring (pgxpool, UoW, outbox.Stage, defer pool.Close, drop hydrate-from-event), `integration/ship_order_test.go` happy + rollback |
 | 4 | `feat(examples/orders): add outbox relay binary` | `cmd/relay/main.go`, `Dockerfile` target for `/orders-relay` |
