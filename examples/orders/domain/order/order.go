@@ -20,9 +20,9 @@ const (
 )
 
 type Item struct {
-	SKU        string
-	Quantity   int
-	PriceCents int64
+	SKU        string `json:"sku"`
+	Quantity   int    `json:"quantity"`
+	PriceCents int64  `json:"price_cents"`
 }
 
 type Order struct {
@@ -42,13 +42,13 @@ func New(id ID, customerID string) *Order {
 }
 
 // Hydrate reconstructs an Order at the supplied state without recording
-// any events. The example worker uses this to seed its per-process repo
-// from a received OrderPlaced (no shared DB across cmds). Real services
-// load from a transactional store and never need this.
-func Hydrate(id ID, customerID string, status Status, version int64, totalCents int64) *Order {
+// any events. The pgx repository uses this in FindByID; integration test
+// seed helpers use it to insert placed orders that skip the outbox path.
+func Hydrate(id ID, customerID string, status Status, version int64, totalCents int64, items []Item) *Order {
 	o := New(id, customerID)
 	o.status = status
 	o.totalCents = totalCents
+	o.items = append([]Item(nil), items...)
 	o.SetVersion(version)
 	return o
 }

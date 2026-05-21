@@ -139,6 +139,7 @@ func handleOrderPlaced(
 		orderdom.StatusPlaced,
 		placed.Version(),
 		placed.TotalCents,
+		nil, // items: filled by FindByID in Task 3; whole hydrate-from-event block is removed there
 	)
 	if err := repo.Save(ctx, o); err != nil {
 		return fmt.Errorf("hydrate save order=%s: %w", placed.AggregateID(), err)
