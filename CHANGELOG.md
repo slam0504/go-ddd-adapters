@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped `github.com/slam0504/go-ddd-core` from `v0.3.0` → `v0.4.0`
+  in both root and `examples/orders` modules. Core's v0.4.0 removed
+  the in-process `eventbus/inbox/memory.go` Memory Inbox; the
+  `Inbox` interface in core's parent `eventbus` package is
+  unchanged, and adapters' import graph touches only that interface,
+  so the bump is non-breaking for adapter consumers. The relocated
+  Memory Inbox in `eventbus/inbox` (this repo, shipped in v0.3.0)
+  is now the canonical implementation; downstream services that
+  had not yet migrated their import path from
+  `go-ddd-core/eventbus/inbox` to
+  `go-ddd-adapters/eventbus/inbox` must do so before pinning
+  `go-ddd-core@v0.4.0` transitively through this version.
+
 ## [v0.4.0] - 2026-05-20
 
 The production-shaped Outbox. Closes all five limitations the
