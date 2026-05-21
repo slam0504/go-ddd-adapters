@@ -1,12 +1,19 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-20 Asia/Taipei (post `v0.4.0` tag cut, bookkeeping branch)
+Last verified: 2026-05-21 Asia/Taipei (post core v0.4.0 release, on `chore/bump-core-v0.4.0` branch)
 Source: verified via `git log main --oneline -10`, `git tag -l -n0`,
-and `gh release view v0.4.0`.
+`gh release view v0.4.0`, `go test ./...` + `golangci-lint run
+./...` (root + examples/orders + `--build-tags=integration`) post
+dep bump.
 
 ## Current Branch
 
-- main: `bc9b041` (HEAD as of 2026-05-20, post PR #16 merge)
+- in-flight branch: `chore/bump-core-v0.4.0` (this commit) — bumps
+  `github.com/slam0504/go-ddd-core` `v0.3.0` → `v0.4.0` in both
+  modules + CHANGELOG `[Unreleased]` note + this state.md update
+  + the prior Option-2 inventory-closure update.
+- main: `d438c0a` (HEAD as of 2026-05-20, post PR #17 merge)
+- previous main: `bc9b041` (post PR #16 merge, v0.4.0 tag cut)
 - tags present in repo: `v0.1.0`, `v0.2.0`, `v0.3.0`, **`v0.4.0`**
   (annotated, pushed 2026-05-20; GitHub Release marked Latest at
   https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
@@ -47,6 +54,17 @@ and `gh release view v0.4.0`.
   published). First tagged release on the v0.3.x line; aligned
   adapters with `go-ddd-core v0.3.0`. Downstream services can pin
   via `go get github.com/slam0504/go-ddd-adapters@v0.3.0`.
+- **Core v0.4.0 shipped 2026-05-21** at core `main` head `aadde89`
+  (merge of core PR #4); annotated tag `v0.4.0` pushed to origin,
+  GitHub Release Latest at
+  https://github.com/slam0504/go-ddd-core/releases/tag/v0.4.0.
+  Core's v0.4.0 physically removed `eventbus/inbox/memory.go` +
+  `memory_test.go` (breaking; `Inbox` interface in parent
+  `eventbus` package preserved). Adapters' `go.mod` (root +
+  `examples/orders`) bumped `go-ddd-core` v0.3.0 → v0.4.0 on this
+  branch; non-breaking for adapters' import graph since no `.go`
+  file references the removed sub-package. Both inbox-memory
+  removal gating conditions now resolved AND delivered.
 - **`v0.4.0` release cycle is CLOSED** (PR #16 merged 2026-05-20,
   tag `v0.4.0` annotated at `bc9b041`, GitHub Release published as
   Latest at https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
@@ -95,18 +113,18 @@ and `gh release view v0.4.0`.
 
 ## Open Items
 
-- **v0.4.0 core-side removal** (on `go-ddd-core`): physically removing
-  `eventbus/inbox/memory.go` is no longer gated by adapters'
-  release cadence — adapters' `v0.4.0` tag (cut 2026-05-20)
-  satisfies the CHANGELOG's "one more release cycle" promise.
-  Remaining gate: **downstream services have migrated their import
-  path** from `go-ddd-core/eventbus/inbox` to
-  `go-ddd-adapters/eventbus/inbox` (no inventory of consumers
-  exists yet — user must surface the list before migration can be
-  planned).
-
-  Not in adapters' scope to execute, but tracked here because the
-  v0.4.0 tag closes the second gating condition.
+- ~~**v0.4.0 core-side removal**~~ ✅ resolved + delivered
+  2026-05-21. Both gating conditions satisfied (Gate (i) adapters'
+  `v0.4.0` tag at `bc9b041` on 2026-05-20; Gate (ii) downstream
+  consumer inventory formally closed as **empty** under Option 2
+  on 2026-05-21, verified via workspace grep of
+  `go-ddd-core/eventbus/inbox` returning zero Go `import`
+  statements across `/Users/eason_tseng/playground/project`).
+  Core PR #4 (`release/v0.4.0-prep` → `main`) merged 2026-05-21
+  at `aadde89`; physically removed `eventbus/inbox/memory.go` +
+  `memory_test.go`; core `v0.4.0` tag pushed + GitHub Release
+  Latest. Adapters' dependency bumped on this branch
+  (`chore/bump-core-v0.4.0`).
 - **pgx outbox cycle scoped-out follow-ups** (each its own future
   cycle, not gating the v0.4.0 cycle close):
   - `examples/orders` outbox wiring against the pgx Store
@@ -163,3 +181,15 @@ go test -race ./eventbus/outbox/...
 cd examples/orders && go test ./...
 golangci-lint run ./...
 ```
+
+Pre-push verification on `chore/bump-core-v0.4.0` (2026-05-21):
+
+- `go build ./...` clean (root + `examples/orders`).
+- `go vet ./...` clean (root + `examples/orders`).
+- `go test ./...` PASS (root: 5 cached + 3 fresh; eventbus/outbox
+  3.5s; eventbus/kafka 1.0s; `examples/orders` no test files).
+- `go test -race ./eventbus/outbox/...` PASS (3.7s).
+- `golangci-lint run ./...` 0 issues (root + `examples/orders`).
+- `golangci-lint run --build-tags=integration ./...` 0 issues.
+- Container-driven integration tests (pgx outbox testcontainer)
+  deferred to CI per cycle convention.
