@@ -21,6 +21,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `go-ddd-core/eventbus/inbox` to
   `go-ddd-adapters/eventbus/inbox` must do so before pinning
   `go-ddd-core@v0.4.0` transitively through this version.
+- `examples/orders` upgraded to demo transactional outbox end-to-end.
+  `cmd/api` and `cmd/worker` now share Postgres for the write model;
+  aggregate `Save` and outbox `Stage` commit in one transaction.
+  Neither binary publishes to Kafka anymore — a new standalone
+  `cmd/relay` binary drains `outbox_records` to Kafka under
+  `FOR UPDATE SKIP LOCKED`. `kafka.RestoreCoreHeaders` propagates
+  trace / causation / correlation headers across the process
+  boundary; the worker also restores headers from the inbound Kafka
+  envelope before dispatching `ShipOrderCommand` and sets
+  `causation_id` to the consumed `OrderPlaced` event id.
+  `docker-compose.yml` gains a Postgres service, two migrate init
+  services (`outbox-migrate` + `orders-migrate` using the official
+  `migrate/migrate:v4.19.1` image with `x-migrations-table` per
+  source so adapter and example migrations track independently),
+  and an `orders-relay` service. The `cmd/reader` projection
+  remains in-memory; durable inbox, exactly-once delivery, and the
+  in-memory-reader shortcut remain intentional and are documented
+  in `examples/orders/README.md`. `Item` gained `json:"sku"`,
+  `json:"quantity"`, `json:"price_cents"` tags — the existing
+  curl flow previously decoded `price_cents` to 0 due to
+  encoding/json case-insensitive matching not normalising
+  underscores.
 
 ## [v0.4.0] - 2026-05-20
 
