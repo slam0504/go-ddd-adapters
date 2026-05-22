@@ -27,17 +27,17 @@ import (
 	orderdom "github.com/slam0504/go-ddd-adapters/examples/orders/domain/order"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/eventcodec"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/pgxrepo"
+	"github.com/slam0504/go-ddd-adapters/examples/orders/workerflow"
 	slogger "github.com/slam0504/go-ddd-adapters/logger/slogger"
 	otelad "github.com/slam0504/go-ddd-adapters/observability/otel"
 	pgxdb "github.com/slam0504/go-ddd-adapters/ports/database/pgx"
 )
 
 const (
-	topicPlaced    = "orders.placed"
-	topicShipped   = "orders.shipped"
-	consumerGroup  = "orders-worker"
-	serviceName    = "orders-worker"
-	defaultCarrier = "demo-carrier"
+	topicPlaced   = "orders.placed"
+	topicShipped  = "orders.shipped"
+	consumerGroup = "orders-worker"
+	serviceName   = "orders-worker"
 )
 
 func main() {
@@ -93,7 +93,7 @@ func run() error {
 	// non-nil means Nack. Do NOT call env.Ack/Nack manually; the
 	// adapter owns ack lifecycle based on the return value.
 	handle := func(hctx context.Context, env eventbus.Envelope) error {
-		return handleOrderPlaced(hctx, log, cmdBus, env)
+		return workerflow.HandleOrderPlaced(hctx, log, cmdBus, env)
 	}
 
 	// Stop order (reverse Use): ConsumerModule drains in-flight handlers
@@ -127,28 +127,4 @@ func registerCommands(uow application.UnitOfWork, repo orderdom.Repository, outb
 		apporder.NewShipOrderHandler(uow, repo, outbox, topicShipped, uuid.NewString),
 	)
 	return bus
-}
-
-func handleOrderPlaced(
-	ctx context.Context,
-	log logger.Logger,
-	cmdBus *command.InMemoryBus,
-	env eventbus.Envelope,
-) error {
-	placed, ok := env.Event.(*orderdom.OrderPlaced)
-	if !ok {
-		return fmt.Errorf("unexpected event type: %s", env.Name)
-	}
-
-	if _, err := cmdBus.Dispatch(ctx, apporder.ShipOrderCommand{
-		OrderID: placed.AggregateID(),
-		Carrier: defaultCarrier,
-	}); err != nil {
-		return fmt.Errorf("ship dispatch order=%s: %w", placed.AggregateID(), err)
-	}
-
-	log.Log(ctx, logger.LevelInfo, "shipped",
-		logger.F("order_id", placed.AggregateID()),
-		logger.F("carrier", defaultCarrier))
-	return nil
 }

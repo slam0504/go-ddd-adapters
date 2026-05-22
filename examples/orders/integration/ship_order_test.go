@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/google/uuid"
 
 	"github.com/slam0504/go-ddd-core/application"
+	"github.com/slam0504/go-ddd-core/application/command"
 	"github.com/slam0504/go-ddd-core/domain"
 	"github.com/slam0504/go-ddd-core/eventbus"
 
@@ -22,6 +24,7 @@ import (
 	orderdom "github.com/slam0504/go-ddd-adapters/examples/orders/domain/order"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/eventcodec"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/pgxrepo"
+	"github.com/slam0504/go-ddd-adapters/examples/orders/workerflow"
 	pgxdb "github.com/slam0504/go-ddd-adapters/ports/database/pgx"
 )
 
@@ -264,6 +267,86 @@ func TestShipOrder_TxRollback(t *testing.T) {
 	}
 	if rowCount != 0 {
 		t.Errorf("outbox rows after rollback: want 0, got %d", rowCount)
+	}
+}
+
+// TestWorker_HandleOrderPlaced_PropagatesHeaders covers the worker
+// boundary that ShipOrder integration tests skip: subscriber decodes a
+// Kafka envelope but does NOT restore propagation headers into ctx, so
+// workerflow.HandleOrderPlaced must do that itself before dispatching
+// ShipOrderCommand. Otherwise OrderShipped's outbox row would carry no
+// trace_id / correlation_id and the distributed trace would break at
+// the worker process boundary.
+//
+// Builds a synthetic envelope (raw watermill message with metadata),
+// calls workerflow.HandleOrderPlaced directly, and asserts the staged
+// OrderShipped outbox row carries the inbound trace/correlation and
+// has causation_id set to the consumed OrderPlaced event id.
+func TestWorker_HandleOrderPlaced_PropagatesHeaders(t *testing.T) {
+	truncate(t)
+
+	const (
+		orderID         = "ord-worker-prop"
+		consumedEventID = "evt-placed-incoming"
+		wantTrace       = "trace-from-broker"
+		wantCorrelation = "correlation-from-broker"
+	)
+
+	seedPlacedOrder(t, orderID, "elena",
+		[]orderdom.Item{{SKU: "E", Quantity: 1, PriceCents: 100}}, 100)
+
+	codec := eventcodec.New()
+	uow := application.UnitOfWorkFromTxManager(pgxdb.NewTxManager(sharedPool))
+	repo := pgxrepo.New(sharedPool)
+	store, err := pgxoutbox.NewStore(pgxoutbox.Config{Pool: sharedPool, Codec: codec})
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	bus := command.NewInMemoryBus()
+	topic := "orders.shipped.worker-prop.test-" + uuid.NewString()
+	command.Register[apporder.ShipOrderCommand, apporder.ShipOrderResult](
+		bus,
+		apporder.NewShipOrderHandler(uow, repo, store, topic, uuid.NewString),
+	)
+
+	placed := orderdom.NewOrderPlaced(consumedEventID, orderID, 1, "elena", 100)
+	rawMsg := message.NewMessage(uuid.NewString(), []byte("payload-unused"))
+	rawMsg.Metadata.Set(eventbus.HeaderTraceID, wantTrace)
+	rawMsg.Metadata.Set(eventbus.HeaderCorrelationID, wantCorrelation)
+	// Deliberately NO causation_id on inbound — workerflow must set it
+	// to placed.EventID() per the propagation contract.
+
+	env := eventbus.Envelope{
+		Name:  orderdom.EventNamePlaced,
+		Event: &placed,
+		Raw:   rawMsg,
+	}
+
+	if err := workerflow.HandleOrderPlaced(context.Background(), testLogger(), bus, env); err != nil {
+		t.Fatalf("HandleOrderPlaced: %v", err)
+	}
+
+	var headersJSON []byte
+	if err := sharedPool.QueryRow(context.Background(),
+		`SELECT headers FROM outbox_records WHERE aggregate_id=$1`, orderID,
+	).Scan(&headersJSON); err != nil {
+		t.Fatalf("outbox row: %v", err)
+	}
+
+	var hdrs map[string]string
+	if err := json.Unmarshal(headersJSON, &hdrs); err != nil {
+		t.Fatalf("headers json: %v", err)
+	}
+	if hdrs[eventbus.HeaderTraceID] != wantTrace {
+		t.Errorf("trace_id: want %q (from inbound), got %q", wantTrace, hdrs[eventbus.HeaderTraceID])
+	}
+	if hdrs[eventbus.HeaderCorrelationID] != wantCorrelation {
+		t.Errorf("correlation_id: want %q (from inbound), got %q", wantCorrelation, hdrs[eventbus.HeaderCorrelationID])
+	}
+	if hdrs[eventbus.HeaderCausationID] != consumedEventID {
+		t.Errorf("causation_id: want %q (= consumed OrderPlaced event id), got %q",
+			consumedEventID, hdrs[eventbus.HeaderCausationID])
 	}
 }
 
