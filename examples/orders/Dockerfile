@@ -10,6 +10,7 @@ COPY go.mod go.sum ./
 COPY eventbus eventbus
 COPY logger logger
 COPY observability observability
+COPY ports ports
 
 # Now copy the example sub-module and resolve its deps.
 COPY examples/orders examples/orders

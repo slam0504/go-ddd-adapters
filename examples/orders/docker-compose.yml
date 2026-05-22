@@ -7,6 +7,42 @@
 #   open http://localhost:16686  (Jaeger UI)
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: orders
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orders -d orders"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  outbox-migrate:
+    image: migrate/migrate:v4.19.1
+    volumes:
+      - ../../eventbus/outbox/pgx/migrations:/migrations:ro
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://orders:orders@postgres:5432/orders?sslmode=disable&x-migrations-table=outbox_schema_migrations"
+      - "up"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  orders-migrate:
+    image: migrate/migrate:v4.19.1
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://orders:orders@postgres:5432/orders?sslmode=disable&x-migrations-table=orders_schema_migrations"
+      - "up"
+    depends_on:
+      outbox-migrate:
+        condition: service_completed_successfully
+
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
     command:
@@ -29,7 +65,7 @@ services:
       retries: 10
 
   jaeger:
-    image: jaegertracing/all-in-one:1.62
+    image: jaegertracing/all-in-one:1.62.0
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
@@ -42,12 +78,12 @@ services:
       dockerfile: examples/orders/Dockerfile
     command: ["/orders-api"]
     environment:
-      KAFKA_BROKERS: redpanda:9092
+      DATABASE_URL: postgres://orders:orders@postgres:5432/orders?sslmode=disable
       OTEL_OTLP_ENDPOINT: jaeger:4317
       HTTP_ADDR: ":8080"
     depends_on:
-      redpanda:
-        condition: service_healthy
+      orders-migrate:
+        condition: service_completed_successfully
       jaeger:
         condition: service_started
     ports:
@@ -59,9 +95,29 @@ services:
       dockerfile: examples/orders/Dockerfile
     command: ["/orders-worker"]
     environment:
+      DATABASE_URL: postgres://orders:orders@postgres:5432/orders?sslmode=disable
       KAFKA_BROKERS: redpanda:9092
       OTEL_OTLP_ENDPOINT: jaeger:4317
     depends_on:
+      orders-migrate:
+        condition: service_completed_successfully
+      redpanda:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+
+  orders-relay:
+    build:
+      context: ../..
+      dockerfile: examples/orders/Dockerfile
+    command: ["/orders-relay"]
+    environment:
+      DATABASE_URL: postgres://orders:orders@postgres:5432/orders?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
+      OTEL_OTLP_ENDPOINT: jaeger:4317
+    depends_on:
+      orders-migrate:
+        condition: service_completed_successfully
       redpanda:
         condition: service_healthy
       jaeger:
