@@ -1,19 +1,21 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-21 Asia/Taipei (post core v0.4.0 release, on `chore/bump-core-v0.4.0` branch)
+Last verified: 2026-05-22 Asia/Taipei (on `feat/examples-orders-pgx-outbox` branch, pre-push)
 Source: verified via `git log main --oneline -10`, `git tag -l -n0`,
-`gh release view v0.4.0`, `go test ./...` + `golangci-lint run
-./...` (root + examples/orders + `--build-tags=integration`) post
-dep bump.
+`gh release view v0.4.0`, `go test -tags=integration -race
+./integration/...` (8/8 pass), `golangci-lint run --build-tags=integration ./...` (0 issues, root + examples/orders),
+`docker compose up --build` end-to-end smoke (POST 201 + projection
+shows status=shipped + carrier=demo-carrier + version=2).
 
 ## Current Branch
 
-- in-flight branch: `chore/bump-core-v0.4.0` (this commit) — bumps
-  `github.com/slam0504/go-ddd-core` `v0.3.0` → `v0.4.0` in both
-  modules + CHANGELOG `[Unreleased]` note + this state.md update
-  + the prior Option-2 inventory-closure update.
-- main: `d438c0a` (HEAD as of 2026-05-20, post PR #17 merge)
-- previous main: `bc9b041` (post PR #16 merge, v0.4.0 tag cut)
+- in-flight branch: `feat/examples-orders-pgx-outbox` — upgrades the
+  examples/orders demo to a transactional outbox end-to-end on the
+  v0.4.0 pgx Outbox + pgx TxManager adapters. 8 implementation
+  commits plus 2 spec commits on top of `main` (`b9696f6`).
+- main: `b9696f6` (HEAD as of 2026-05-21, post PR #18 merge —
+  `go-ddd-core` bump to v0.4.0).
+- previous main: `d438c0a` (post PR #17 merge, v0.4.0 tag bookkeeping)
 - tags present in repo: `v0.1.0`, `v0.2.0`, `v0.3.0`, **`v0.4.0`**
   (annotated, pushed 2026-05-20; GitHub Release marked Latest at
   https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
@@ -33,6 +35,24 @@ dep bump.
 
 ## Current Status
 
+- **`examples/orders` pgx outbox demo cycle in flight** on branch
+  `feat/examples-orders-pgx-outbox`. Closes the README's
+  "No outbox" and "Per-process in-memory repos" shortcuts.
+  `cmd/api` + `cmd/worker` share Postgres for the write model;
+  transactional `Save` + `outbox.Stage` via `application.UnitOfWork`
+  bridged from `pgxdb.TxManager`. New `cmd/relay` binary drains
+  outbox to Kafka under SKIP LOCKED. docker-compose gains
+  Postgres + two `migrate/migrate:v4.19.1` init services
+  (`outbox-migrate` + `orders-migrate` with per-source
+  `x-migrations-table`). 5 targeted integration tests
+  (PlaceOrder happy / rollback + ShipOrder happy / rollback /
+  not-found + Worker handle propagation). Worker restores Kafka
+  headers + sets causation_id on Ship dispatch (caught during
+  Checkpoint B review). Reader projection / durable inbox /
+  exactly-once remain intentional shortcuts. Design spec at
+  `docs/superpowers/specs/2026-05-21-examples-orders-pgx-outbox-design.md`;
+  plan at
+  `docs/superpowers/plans/2026-05-21-examples-orders-pgx-outbox.md`.
 - v0.3.0 dependency-bump cycle is **CLOSED**. Both root `go.mod` and
   `examples/orders/go.mod` require `github.com/slam0504/go-ddd-core v0.3.0`.
 - Doc / agent-memory alignment cycle is **CLOSED** (PR #6 merged
@@ -125,11 +145,19 @@ dep bump.
   `memory_test.go`; core `v0.4.0` tag pushed + GitHub Release
   Latest. Adapters' dependency bumped on this branch
   (`chore/bump-core-v0.4.0`).
+- **`examples/orders` pgx outbox demo cycle** in flight on branch
+  `feat/examples-orders-pgx-outbox`. PR open pending CI green.
+  Sub-items remaining (each its own future cycle, none gating this
+  PR): `eventbus/inbox/pgx` adapter, pgx projection for
+  `cmd/reader`, LISTEN/NOTIFY push relay, `claim_id` worker
+  attribution, `orders.version` optimistic-locking activation.
+- ~~`examples/orders` outbox wiring~~ ✅ resolved by the
+  `feat/examples-orders-pgx-outbox` branch (above). Closes both the
+  "no outbox" shortcut and the "per-process in-memory repos"
+  shortcut documented in the example README. Reader projection
+  stays in-memory by design (separate follow-up).
 - **pgx outbox cycle scoped-out follow-ups** (each its own future
   cycle, not gating the v0.4.0 cycle close):
-  - `examples/orders` outbox wiring against the pgx Store
-    (needs docker-compose Postgres service, pgxrepo for aggregate
-    persistence, end-to-end integration test).
   - `LISTEN/NOTIFY` push-based delivery variant.
   - `claim_id`-based worker attribution — current lease model
     answers "is this row claimed?" via wall-clock `claimed_until`
@@ -137,10 +165,6 @@ dep bump.
     hosts is supported (SKIP LOCKED), operator visibility into
     worker identity is the scoped-out piece.
   - `eventbus/inbox/pgx` adapter.
-- **`examples/orders` outbox wiring** (optional follow-up): closes the
-  "no outbox" shortcut documented in the example; gated on whether the
-  team wants the memory adapter on the demo path or prefers waiting
-  for pgx.
 - ~~adapters tag~~ ✅ done 2026-05-19 (`v0.3.0` at `3ce2a23`) +
   2026-05-20 (`v0.4.0` at `bc9b041`, marked Latest at
   https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
@@ -193,3 +217,25 @@ Pre-push verification on `chore/bump-core-v0.4.0` (2026-05-21):
 - `golangci-lint run --build-tags=integration ./...` 0 issues.
 - Container-driven integration tests (pgx outbox testcontainer)
   deferred to CI per cycle convention.
+
+Pre-push verification on `feat/examples-orders-pgx-outbox` (2026-05-22):
+
+- `go build ./...` clean (root + `examples/orders`).
+- `go vet ./...` clean.
+- `go test -tags=integration -race ./integration/...` PASS in
+  `examples/orders`: 8/8 — `TestPartitionByAggregate_PreservesOrder`,
+  `TestPlaceOrder_TransactionalOutbox`, `TestPlaceOrder_TxRollback`,
+  `TestRoundTrip_AllHeaders`, `TestShipOrder_TransactionalOutbox`,
+  `TestShipOrder_TxRollback`, `TestWorker_HandleOrderPlaced_PropagatesHeaders`,
+  `TestShipOrder_NotFound`.
+- `golangci-lint run --build-tags=integration ./...` 0 issues
+  (root + `examples/orders`).
+- `docker compose up --build -d` smoke-tested end-to-end:
+  POST `/orders` returns 201 with `TotalCents=998` (json
+  "price_cents" tag fix proves out); GET on reader at `:8081`
+  shows `status="shipped"`, `carrier="demo-carrier"`, `version=2`
+  after worker → outbox → relay → kafka → reader drain. Both
+  migrate services exited 0; postgres state tables show
+  `outbox_schema_migrations.version=2` and
+  `orders_schema_migrations.version=1` (independent per-source
+  tracking verified).

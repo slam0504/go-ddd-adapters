@@ -1,6 +1,8 @@
 // Command worker subscribes to OrderPlaced events and dispatches the ship
-// command. It demonstrates the event-driven handler chain: api publishes
-// → worker consumes → publishes follow-up event for reader to project.
+// command. The ship command loads the aggregate from the shared Postgres
+// (api's commit is durable by the time relay publishes the event),
+// transitions it to shipped, and stages OrderShipped via the outbox in
+// the same transaction.
 package main
 
 import (
@@ -10,28 +12,32 @@ import (
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/slam0504/go-ddd-core/application"
 	"github.com/slam0504/go-ddd-core/application/command"
 	"github.com/slam0504/go-ddd-core/bootstrap"
 	"github.com/slam0504/go-ddd-core/eventbus"
 	"github.com/slam0504/go-ddd-core/ports/logger"
 
 	"github.com/slam0504/go-ddd-adapters/eventbus/kafka"
+	pgxoutbox "github.com/slam0504/go-ddd-adapters/eventbus/outbox/pgx"
 	apporder "github.com/slam0504/go-ddd-adapters/examples/orders/application/order"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/cmd/internal/runtime"
 	orderdom "github.com/slam0504/go-ddd-adapters/examples/orders/domain/order"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/eventcodec"
-	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/memrepo"
+	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/pgxrepo"
+	"github.com/slam0504/go-ddd-adapters/examples/orders/workerflow"
 	slogger "github.com/slam0504/go-ddd-adapters/logger/slogger"
 	otelad "github.com/slam0504/go-ddd-adapters/observability/otel"
+	pgxdb "github.com/slam0504/go-ddd-adapters/ports/database/pgx"
 )
 
 const (
-	topicPlaced    = "orders.placed"
-	topicShipped   = "orders.shipped"
-	consumerGroup  = "orders-worker"
-	serviceName    = "orders-worker"
-	defaultCarrier = "FedEx"
+	topicPlaced   = "orders.placed"
+	topicShipped  = "orders.shipped"
+	consumerGroup = "orders-worker"
+	serviceName   = "orders-worker"
 )
 
 func main() {
@@ -50,51 +56,56 @@ func run() error {
 		return err
 	}
 
+	dbURL, err := runtime.RequiredEnv("DATABASE_URL")
+	if err != nil {
+		return err
+	}
+
 	prov, err := runtime.OTelProvider(ctx, serviceName, os.Getenv("OTEL_OTLP_ENDPOINT"))
 	if err != nil {
 		return err
 	}
 
-	codec := eventcodec.New()
-	pub, err := newPublisher(brokers, codec)
+	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("pgxpool: %w", err)
 	}
+	defer pool.Close()
+
+	codec := eventcodec.New()
+	store, err := pgxoutbox.NewStore(pgxoutbox.Config{Pool: pool, Codec: codec})
+	if err != nil {
+		return fmt.Errorf("pgxoutbox store: %w", err)
+	}
+
+	txMgr := pgxdb.NewTxManager(pool)
+	uow := application.UnitOfWorkFromTxManager(txMgr)
+	repo := pgxrepo.New(pool)
+
 	sub, err := newSubscriber(brokers, codec)
 	if err != nil {
 		return err
 	}
 
-	repo := memrepo.NewOrderRepository()
-	cmdBus := registerCommands(repo, pub)
+	cmdBus := registerCommands(uow, repo, store)
 
+	// kafka.ConsumerModule's handle returns error — nil means Ack,
+	// non-nil means Nack. Do NOT call env.Ack/Nack manually; the
+	// adapter owns ack lifecycle based on the return value.
 	handle := func(hctx context.Context, env eventbus.Envelope) error {
-		return handleOrderPlaced(hctx, log, cmdBus, repo, env)
+		return workerflow.HandleOrderPlaced(hctx, log, cmdBus, env)
 	}
 
 	// Stop order (reverse Use): ConsumerModule drains in-flight handlers
-	// → SubscriberModule closes the watermill subscriber → PublisherModule
-	// closes Publisher → otelad flushes + shuts down.
+	// -> SubscriberModule closes the watermill subscriber -> otelad
+	// flushes + shuts down.
 	app := bootstrap.New(bootstrap.Options{Logger: log})
 	app.Use(
 		otelad.Module(prov),
-		kafka.PublisherModule(pub),
 		kafka.SubscriberModule(sub),
 		kafka.ConsumerModule(sub, topicPlaced, log, handle),
 	)
 	return app.Run(ctx)
-}
-
-func newPublisher(brokers []string, codec eventbus.Codec) (*kafka.Publisher, error) {
-	pub, err := kafka.NewPublisher(kafka.PublisherConfig{
-		Brokers:              brokers,
-		Codec:                codec,
-		PartitionByAggregate: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("kafka publisher: %w", err)
-	}
-	return pub, nil
 }
 
 func newSubscriber(brokers []string, codec eventbus.Codec) (*kafka.Subscriber, error) {
@@ -109,49 +120,11 @@ func newSubscriber(brokers []string, codec eventbus.Codec) (*kafka.Subscriber, e
 	return sub, nil
 }
 
-func registerCommands(repo *memrepo.OrderRepository, pub eventbus.Publisher) *command.InMemoryBus {
+func registerCommands(uow application.UnitOfWork, repo orderdom.Repository, outbox eventbus.Outbox) *command.InMemoryBus {
 	bus := command.NewInMemoryBus()
 	command.Register[apporder.ShipOrderCommand, apporder.ShipOrderResult](
 		bus,
-		apporder.NewShipOrderHandler(repo, pub, topicShipped, uuid.NewString),
+		apporder.NewShipOrderHandler(uow, repo, outbox, topicShipped, uuid.NewString),
 	)
 	return bus
-}
-
-func handleOrderPlaced(
-	ctx context.Context,
-	log logger.Logger,
-	cmdBus *command.InMemoryBus,
-	repo orderdom.Repository,
-	env eventbus.Envelope,
-) error {
-	placed, ok := env.Event.(*orderdom.OrderPlaced)
-	if !ok {
-		return fmt.Errorf("unexpected event type: %s", env.Name)
-	}
-
-	// Hydrate the aggregate into the worker's local repo so the ship
-	// handler can FindByID it. Per-process in-mem workaround; goes away
-	// with a shared DB.
-	o := orderdom.Hydrate(
-		orderdom.ID(placed.AggregateID()),
-		placed.CustomerID,
-		orderdom.StatusPlaced,
-		placed.Version(),
-		placed.TotalCents,
-	)
-	if err := repo.Save(ctx, o); err != nil {
-		return fmt.Errorf("hydrate save order=%s: %w", placed.AggregateID(), err)
-	}
-
-	if _, err := cmdBus.Dispatch(ctx, apporder.ShipOrderCommand{
-		OrderID: placed.AggregateID(),
-		Carrier: defaultCarrier,
-	}); err != nil {
-		return fmt.Errorf("ship dispatch order=%s: %w", placed.AggregateID(), err)
-	}
-
-	log.Log(ctx, logger.LevelInfo, "shipped",
-		logger.F("order_id", placed.AggregateID()), logger.F("carrier", defaultCarrier))
-	return nil
 }

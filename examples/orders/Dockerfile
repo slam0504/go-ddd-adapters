@@ -10,6 +10,7 @@ COPY go.mod go.sum ./
 COPY eventbus eventbus
 COPY logger logger
 COPY observability observability
+COPY ports ports
 
 # Now copy the example sub-module and resolve its deps.
 COPY examples/orders examples/orders
@@ -23,14 +24,16 @@ ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH}
 
 RUN go build -trimpath -ldflags='-s -w' -o /out/orders-api ./cmd/api && \
     go build -trimpath -ldflags='-s -w' -o /out/orders-worker ./cmd/worker && \
-    go build -trimpath -ldflags='-s -w' -o /out/orders-reader ./cmd/reader
+    go build -trimpath -ldflags='-s -w' -o /out/orders-reader ./cmd/reader && \
+    go build -trimpath -ldflags='-s -w' -o /out/orders-relay ./cmd/relay
 
-# Runtime stage — distroless static, holds all three binaries. Each
+# Runtime stage — distroless static, holds all four binaries. Each
 # service in docker-compose picks one via the `command` override.
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /out/orders-api /orders-api
 COPY --from=build /out/orders-worker /orders-worker
 COPY --from=build /out/orders-reader /orders-reader
+COPY --from=build /out/orders-relay /orders-relay
 
 USER nonroot:nonroot

@@ -415,3 +415,107 @@ home in this repo is now in place under `eventbus/inbox/` (this PR).
 Core can remove its copy in a subsequent core release; downstream
 services migrate by changing the import path from
 `go-ddd-core/eventbus/inbox` to `go-ddd-adapters/eventbus/inbox`.
+
+
+## `examples/orders` pgx outbox demo (2026-05-22 cycle)
+
+Demo-only design decisions; not public adapter API. Captured during
+the brainstorm session whose spec lives at
+`docs/superpowers/specs/2026-05-21-examples-orders-pgx-outbox-design.md`.
+
+1. **Scope is B-outbox-only.** `cmd/api` + `cmd/worker` go through
+   transactional outbox; `cmd/relay` is standalone; `cmd/reader`
+   keeps its in-memory projection. Inbox dedup, pgx projection,
+   exactly-once, embedded relay, full e2e tests are all
+   out-of-scope and documented as intentional shortcuts in the
+   README.
+
+2. **`x-migrations-table` per source.** Adapter outbox migrations
+   and example business migrations are different schema owners;
+   sharing one `schema_migrations` table risks future
+   adapter-migration-number collision with caller-numbered
+   migrations. Used golang-migrate's `x-migrations-table` to give
+   each source its own state table:
+   `outbox_schema_migrations` for the adapter,
+   `orders_schema_migrations` for the example. Compose mounts each
+   source separately; integration tests apply each source via the
+   library against the same table parameters. Verified via
+   `docker compose up` smoke: state tables are independent;
+   adapter and example migrations can evolve their version
+   numbering independently.
+
+3. **`Item` gets JSON tags.** Pre-existing bug — `price_cents`
+   would silently decode to 0 because Go's `encoding/json` is
+   case-insensitive but does not normalise underscores. Fixed
+   because pgxrepo's JSONB column would otherwise diverge from
+   the HTTP wire shape (round-trip inconsistency).
+
+4. **`Hydrate` gains items + defensive copy.** Required by
+   pgxrepo's `FindByID` to rehydrate the aggregate with full state
+   (including items). Defensive `append([]Item(nil), items...)`
+   so caller mutation cannot leak in.
+
+5. **Worker drops hydrate-from-event.** With shared Postgres, the
+   old per-process memrepo + `Hydrate(from event)` workaround is
+   unnecessary. `ShipOrderHandler` uses `repo.FindByID(ctx, id)`;
+   api's transactional commit + relay's publish-only-committed
+   contract guarantees the row is durable by the time worker sees
+   the event. `OrderPlaced` payload does NOT gain an `Items` field.
+
+6. **Transaction boundary is `Save + Stage`.** Domain logic (Place
+   / Ship) runs before `uow.Do`; codec marshal, command bus
+   dispatch, and Kafka consumer ack/nack are all outside the tx.
+   `ClearEvents` runs after `uow.Do` returns nil.
+
+7. **Kafka consumer ack/nack MUST stay out of the DB tx.**
+   Mixing broker offset commit with DB tx would couple redelivery
+   to DB failures; the watermill subscriber lifecycle owns
+   ack/nack via the handler's return value. `kafka.ConsumerModule`
+   enforces this — the handle signature is
+   `func(ctx, env) error`; nil = Ack, non-nil = Nack; do NOT call
+   `env.Ack/Nack` manually.
+
+8. **`cmd/relay` is wiring-only.** Composes `pgxoutbox.Store` +
+   `outbox.Relay` + `kafka.Publisher` + `kafka.RestoreCoreHeaders`;
+   no new generic relay package. `DeadLetterRecorder` is
+   auto-discovered from `Store` by `NewRelay` (no explicit wire).
+   Knobs (`MaxAttempts`, `PollInterval`, `BatchSize`, `Backoff`,
+   `ClaimLease`) stay at defaults; no env exposure this cycle.
+
+9. **`orders-api` does not depend on Redpanda in compose.** The
+   binary no longer publishes to Kafka after the refactor (and
+   never subscribed). A false dependency would teach the wrong
+   topology. (The binary still imports the kafka package for
+   ctx-bound header helpers used by the shared codec; that is a
+   Go import edge, not a runtime broker connection.)
+
+10. **`pgxrepo.FindByID` maps `pgx.ErrNoRows` to
+    `domain.ErrNotFound`.** Mirrors `memrepo` so swapping repo
+    implementations does not drift error semantics. Locked by
+    `TestShipOrder_NotFound`.
+
+11. **`orders.version` is reserved but unused.** BIGINT column
+    matches `Order.Version() int64`. `Save` writes the value but
+    does not gate UPDATE on a `WHERE version = $expected` clause;
+    behaviour is last-write-wins. Optimistic-locking activation is
+    a separate future cycle.
+
+12. **Worker restores Kafka headers + overwrites causation_id
+    before dispatching ShipOrderCommand.** Surfaced during the
+    Checkpoint B review: the subscriber decodes the envelope but
+    does NOT restore Kafka metadata into ctx, so without explicit
+    restoration the staged OrderShipped row would carry no
+    trace/correlation and distributed tracing would break at the
+    worker process boundary. The handler in `workerflow.HandleOrderPlaced`
+    calls `kafka.RestoreCoreHeaders(map[string]string(env.Raw.Metadata))`
+    and then `kafka.WithCausationID(placed.EventID())` —
+    OrderShipped reports the consumed OrderPlaced as its cause,
+    while trace and correlation pass through unchanged. Locked by
+    `TestWorker_HandleOrderPlaced_PropagatesHeaders`.
+
+13. **`handleOrderPlaced` lives in `examples/orders/workerflow/`,
+    not `cmd/internal/`.** Go's `internal/` rule restricts imports
+    to siblings of the `internal/` directory; the integration test
+    package needs to call this adapter directly, which is not a
+    sibling of `cmd/internal/`. The sibling-of-cmd location keeps
+    the function testable without further indirection.

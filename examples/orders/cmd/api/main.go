@@ -1,6 +1,7 @@
 // Command api is the command-side HTTP service for the orders example.
 // POST /orders accepts a place-order request, dispatches the command,
-// persists to memrepo, and publishes OrderPlaced to Kafka.
+// persists to Postgres, and stages OrderPlaced into the outbox in the
+// same transaction. A separate cmd/relay drains the outbox to Kafka.
 package main
 
 import (
@@ -12,20 +13,24 @@ import (
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/slam0504/go-ddd-core/application"
 	"github.com/slam0504/go-ddd-core/application/command"
 	"github.com/slam0504/go-ddd-core/bootstrap"
 	"github.com/slam0504/go-ddd-core/eventbus"
 	"github.com/slam0504/go-ddd-core/ports/logger"
 
 	"github.com/slam0504/go-ddd-adapters/eventbus/kafka"
+	pgxoutbox "github.com/slam0504/go-ddd-adapters/eventbus/outbox/pgx"
 	apporder "github.com/slam0504/go-ddd-adapters/examples/orders/application/order"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/cmd/internal/runtime"
 	orderdom "github.com/slam0504/go-ddd-adapters/examples/orders/domain/order"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/eventcodec"
-	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/memrepo"
+	"github.com/slam0504/go-ddd-adapters/examples/orders/infra/pgxrepo"
 	slogger "github.com/slam0504/go-ddd-adapters/logger/slogger"
 	otelad "github.com/slam0504/go-ddd-adapters/observability/otel"
+	pgxdb "github.com/slam0504/go-ddd-adapters/ports/database/pgx"
 )
 
 const (
@@ -45,7 +50,7 @@ func run() error {
 	ctx := context.Background()
 	log := slogger.New(slogger.Config{Level: slog.LevelInfo}).With(logger.F("service", serviceName))
 
-	brokers, err := runtime.BrokersFromEnv()
+	dbURL, err := runtime.RequiredEnv("DATABASE_URL")
 	if err != nil {
 		return err
 	}
@@ -55,39 +60,37 @@ func run() error {
 		return err
 	}
 
-	pub, err := newPublisher(brokers)
+	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("pgxpool: %w", err)
+	}
+	defer pool.Close()
+
+	codec := eventcodec.New()
+	store, err := pgxoutbox.NewStore(pgxoutbox.Config{Pool: pool, Codec: codec})
+	if err != nil {
+		return fmt.Errorf("pgxoutbox store: %w", err)
 	}
 
-	cmdBus := registerCommands(memrepo.NewOrderRepository(), pub)
+	txMgr := pgxdb.NewTxManager(pool)
+	uow := application.UnitOfWorkFromTxManager(txMgr)
+	repo := pgxrepo.New(pool)
+
+	cmdBus := registerCommands(uow, repo, store)
 
 	app := bootstrap.New(bootstrap.Options{Logger: log})
 	app.Use(
 		otelad.Module(prov),
-		kafka.PublisherModule(pub),
 		runtime.HTTPModule(runtime.EnvOr("HTTP_ADDR", defaultHTTPAddr), routes(cmdBus, log), log),
 	)
 	return app.Run(ctx)
 }
 
-func newPublisher(brokers []string) (*kafka.Publisher, error) {
-	pub, err := kafka.NewPublisher(kafka.PublisherConfig{
-		Brokers:              brokers,
-		Codec:                eventcodec.New(),
-		PartitionByAggregate: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("kafka publisher: %w", err)
-	}
-	return pub, nil
-}
-
-func registerCommands(repo *memrepo.OrderRepository, pub eventbus.Publisher) *command.InMemoryBus {
+func registerCommands(uow application.UnitOfWork, repo orderdom.Repository, outbox eventbus.Outbox) *command.InMemoryBus {
 	bus := command.NewInMemoryBus()
 	command.Register[apporder.PlaceOrderCommand, apporder.PlaceOrderResult](
 		bus,
-		apporder.NewPlaceOrderHandler(repo, pub, topicPlaced, uuid.NewString),
+		apporder.NewPlaceOrderHandler(uow, repo, outbox, topicPlaced, uuid.NewString),
 	)
 	return bus
 }

@@ -20,7 +20,7 @@ import (
 // publisher routes them all to one Kafka partition, which guarantees order.
 func TestPartitionByAggregate_PreservesOrder(t *testing.T) {
 	const (
-		topic     = "orders.placed.partition"
+		topic      = "orders.placed.partition"
 		eventCount = 50
 	)
 	ctx := context.Background()
