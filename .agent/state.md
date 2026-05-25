@@ -1,55 +1,81 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-22 Asia/Taipei (on `feat/examples-orders-pgx-outbox` branch, pre-push)
-Source: verified via `git log main --oneline -10`, `git tag -l -n0`,
-`gh release view v0.4.0`, `go test -tags=integration -race
-./integration/...` (8/8 pass), `golangci-lint run --build-tags=integration ./...` (0 issues, root + examples/orders),
-`docker compose up --build` end-to-end smoke (POST 201 + projection
-shows status=shipped + carrier=demo-carrier + version=2).
+Last verified: 2026-05-25 Asia/Taipei (on `main` after PR #20 merge — bookkeeping pass only, no CI re-run)
+Source: `git log main --oneline -10` shows merge commit `1dbbfdb`
+(`Merge pull request #20 from slam0504/feat/orders-version-optimistic-locking`,
+merged 2026-05-25 19:24 +0800). PR #20's CI was 5/5 green at merge
+tip (build+test root + `examples/orders`, golangci-lint root +
+`examples/orders`, integration testcontainers). `git status --short`
+shows only the expected local-only set after this commit lands
+(`?? .agent/context-checkpoint.log`, `?? .agent/session-checkpoint.md`,
+`?? .serena/`).
 
 ## Current Branch
 
-- in-flight branch: `feat/examples-orders-pgx-outbox` — upgrades the
-  examples/orders demo to a transactional outbox end-to-end on the
-  v0.4.0 pgx Outbox + pgx TxManager adapters. 8 implementation
-  commits plus 2 spec commits on top of `main` (`b9696f6`).
-- main: `b9696f6` (HEAD as of 2026-05-21, post PR #18 merge —
-  `go-ddd-core` bump to v0.4.0).
-- previous main: `d438c0a` (post PR #17 merge, v0.4.0 tag bookkeeping)
+- working tree: on `main` (this bookkeeping commit). `.serena/`,
+  `.agent/context-checkpoint.log`, `.agent/session-checkpoint.md`
+  remain untracked / local-only.
+- main: `1dbbfdb` (HEAD as of 2026-05-25, post PR #20 merge —
+  `orders.version` optimistic-locking activation).
+- previous main: `e6b1672` (post PR #19 merge, `examples/orders`
+  pgx outbox demo).
+- previous main: `b9696f6` (post PR #18 merge, `go-ddd-core` bump to v0.4.0)
 - tags present in repo: `v0.1.0`, `v0.2.0`, `v0.3.0`, **`v0.4.0`**
   (annotated, pushed 2026-05-20; GitHub Release marked Latest at
   https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
   `v0.4.0` points at merge commit `bc9b041`; `v0.3.0` points at
-  `3ce2a23`.
+  `3ce2a23`. PR #20 ships **no** tag — it's example-only changes.
 - latest commits on `main`:
-  - `bc9b041` `Merge pull request #16 from slam0504/release/v0.4.0`
-  - `0e2edcc` `release(v0.4.0): pgx Outbox + pgx TxManager`
-  - `55c3bea` `Merge pull request #15 from slam0504/chore/post-v0.4.0-pgx-outbox-bookkeeping`
-  - `bd9e191` `chore(agent-memory): record v0.4.0 pgx outbox cycle CLOSED post PR #14`
-  - `2e9e96d` `Merge pull request #14 from slam0504/feat/outbox-pgx-adapter`
-  - `81a45bf` `chore(examples/orders): go mod tidy to follow adapter root dep bumps`
-  - `b1ce6f1` `chore(agent-memory): mark pgx outbox cycle ready for review`
-  - `d1db48c` `docs(outbox/pgx): tighten SKIP LOCKED wording ("partition" → "disjoint")`
-  - `0655989` `docs(outbox/pgx): README adapter row + migration guide + CHANGELOG`
-  - `698548a` `test(eventbus/outbox/pgx): integration tests`
+  - `1dbbfdb` `Merge pull request #20 from slam0504/feat/orders-version-optimistic-locking`
+  - `0636314` `docs(superpowers): add orders.version optimistic locking spec and plan`
+  - `34cbc4b` `chore(agent-memory): record orders.version optimistic-locking cycle decisions`
+  - `68c1dcd` `docs(examples/orders): note memrepo lacks optimistic-locking enforcement`
+  - `3c082dc` `feat(examples/orders): map ErrConcurrencyConflict to HTTP 409 in cmd/api`
+  - `0d0ec79` `feat(examples/orders): pgxrepo.Save enforces orders.version optimistic lock`
+  - `e6b1672` `Merge pull request #19 from slam0504/feat/examples-orders-pgx-outbox`
+  - `4307eb6` `docs(plan): implementation plan for examples/orders pgx outbox demo`
+  - `e2a63dc` `chore(agent-memory): record examples/orders pgx outbox cycle`
+  - `5e73d29` `docs(examples/orders): document pgx outbox demo and remaining shortcuts`
 
 ## Current Status
 
-- **`examples/orders` pgx outbox demo cycle in flight** on branch
-  `feat/examples-orders-pgx-outbox`. Closes the README's
-  "No outbox" and "Per-process in-memory repos" shortcuts.
-  `cmd/api` + `cmd/worker` share Postgres for the write model;
-  transactional `Save` + `outbox.Stage` via `application.UnitOfWork`
-  bridged from `pgxdb.TxManager`. New `cmd/relay` binary drains
-  outbox to Kafka under SKIP LOCKED. docker-compose gains
-  Postgres + two `migrate/migrate:v4.19.1` init services
-  (`outbox-migrate` + `orders-migrate` with per-source
-  `x-migrations-table`). 5 targeted integration tests
-  (PlaceOrder happy / rollback + ShipOrder happy / rollback /
-  not-found + Worker handle propagation). Worker restores Kafka
-  headers + sets causation_id on Ship dispatch (caught during
-  Checkpoint B review). Reader projection / durable inbox /
-  exactly-once remain intentional shortcuts. Design spec at
+- **`orders.version` optimistic-locking cycle is CLOSED** (PR #20
+  merged 2026-05-25 19:24 +0800 at merge commit `1dbbfdb`).
+  `pgxrepo.Save` now uses a SQL-encoded `EXCLUDED.version - 1`
+  guard on the ON CONFLICT UPDATE branch; `RowsAffected()==0`
+  surfaces as wrapped `domain.ErrConcurrencyConflict`, which the
+  existing UoW tx rolls back together with the staged outbox row.
+  `cmd/api` gains a partial `ErrConcurrencyConflict → 409`
+  mapping (full HTTP error taxonomy is the new follow-up cycle).
+  `memrepo` carries a one-line package-doc note that it does not
+  enforce optimistic locking. 2 new `//go:build integration`
+  tests in `examples/orders/integration/optimistic_lock_test.go`
+  (`TestSave_OptimisticLock_ConcurrentUpdate`,
+  `TestPlaceOrder_DuplicateID_Conflict`); the pre-existing 8
+  stayed green. PR #20 ships **no** tag — example-only. Design
+  spec at
+  `docs/superpowers/specs/2026-05-23-orders-version-optimistic-locking-design.md`;
+  plan at
+  `docs/superpowers/plans/2026-05-23-orders-version-optimistic-locking.md`;
+  cycle decisions captured in `.agent/decisions.md` under
+  "orders.version optimistic locking activation (2026-05-23 cycle)".
+- **`examples/orders` pgx outbox demo cycle is CLOSED** (PR #19
+  merged 2026-05-22 16:31 +0800 at merge commit `e6b1672`). Closed
+  the README's "No outbox" and "Per-process in-memory repos"
+  shortcuts. `cmd/api` + `cmd/worker` share Postgres for the write
+  model; transactional `Save` + `outbox.Stage` via
+  `application.UnitOfWork` bridged from `pgxdb.TxManager`. New
+  `cmd/relay` binary drains outbox to Kafka under SKIP LOCKED.
+  docker-compose gains Postgres + two `migrate/migrate:v4.19.1`
+  init services (`outbox-migrate` + `orders-migrate` with
+  per-source `x-migrations-table`). 8 integration tests under
+  `//go:build integration` in `examples/orders/integration/` (8/8
+  pass — see Pre-push verification block at bottom). Worker
+  restores Kafka headers + sets causation_id on Ship dispatch
+  (commit `54e0691`, caught during Checkpoint B review). Reader
+  projection / durable inbox / exactly-once remain intentional
+  shortcuts (now tracked as their own future cycles in Open
+  Items). PR #19 ships **no** tag — example-only. Design spec at
   `docs/superpowers/specs/2026-05-21-examples-orders-pgx-outbox-design.md`;
   plan at
   `docs/superpowers/plans/2026-05-21-examples-orders-pgx-outbox.md`.
@@ -145,26 +171,41 @@ shows status=shipped + carrier=demo-carrier + version=2).
   `memory_test.go`; core `v0.4.0` tag pushed + GitHub Release
   Latest. Adapters' dependency bumped on this branch
   (`chore/bump-core-v0.4.0`).
-- **`examples/orders` pgx outbox demo cycle** in flight on branch
-  `feat/examples-orders-pgx-outbox`. PR open pending CI green.
-  Sub-items remaining (each its own future cycle, none gating this
-  PR): `eventbus/inbox/pgx` adapter, pgx projection for
-  `cmd/reader`, LISTEN/NOTIFY push relay, `claim_id` worker
-  attribution, `orders.version` optimistic-locking activation.
+- ~~**`examples/orders` pgx outbox demo cycle**~~ ✅ resolved
+  2026-05-22 (PR #19 merged at `e6b1672`). Remaining shortcuts
+  from the demo and scoped-out follow-ups from the v0.4.0 pgx
+  outbox adapter cycle are tracked once in "Pending follow-up
+  cycles" below to avoid drift.
 - ~~`examples/orders` outbox wiring~~ ✅ resolved by the
   `feat/examples-orders-pgx-outbox` branch (above). Closes both the
   "no outbox" shortcut and the "per-process in-memory repos"
   shortcut documented in the example README. Reader projection
   stays in-memory by design (separate follow-up).
-- **pgx outbox cycle scoped-out follow-ups** (each its own future
-  cycle, not gating the v0.4.0 cycle close):
-  - `LISTEN/NOTIFY` push-based delivery variant.
-  - `claim_id`-based worker attribution — current lease model
-    answers "is this row claimed?" via wall-clock `claimed_until`
-    only, NOT "WHICH worker holds it". Multi-Relay across many
-    hosts is supported (SKIP LOCKED), operator visibility into
-    worker identity is the scoped-out piece.
-  - `eventbus/inbox/pgx` adapter.
+- **Pending follow-up cycles** (each independent, none gating PR
+  #19 or the v0.4.0 adapter release):
+  - ~~`orders.version` optimistic-locking activation~~ ✅ resolved
+    by PR #20 at merge commit `1dbbfdb` (2026-05-25). `pgxrepo.Save`
+    enforces the prior-version guard via SQL; conflict surfaces as
+    `domain.ErrConcurrencyConflict`. See `.agent/decisions.md`
+    "orders.version optimistic locking activation (2026-05-23 cycle)".
+  - **NEW follow-up — HTTP error mapping polish**: extend `cmd/api`
+    to a full transport-error taxonomy (not-found → 404, rule
+    violation → 422, etc.). Today only `ErrConcurrencyConflict → 409`
+    is wired (partial mapping by design; flagged in `cmd/api/main.go`
+    with a `TODO` comment).
+  - pgx projection for `cmd/reader` — reader still uses
+    `infra/memrepo` in-memory store.
+  - `eventbus/inbox/pgx` adapter + durable inbox / exactly-once
+    consumer semantics — only in-process `Memory` inbox exists
+    today, and the demo README documents durable inbox as a
+    shortcut. Design these together because the Inbox contract's
+    duplicate-handling semantics shape what "exactly-once" can
+    promise.
+  - LISTEN/NOTIFY push-based relay variant — polling optimisation;
+    defer until durable/correctness items above are stable.
+  - `claim_id` worker attribution — operational visibility, not
+    correctness; current lease only answers "is this row claimed?"
+    via wall-clock `claimed_until`, not which worker holds it.
 - ~~adapters tag~~ ✅ done 2026-05-19 (`v0.3.0` at `3ce2a23`) +
   2026-05-20 (`v0.4.0` at `bc9b041`, marked Latest at
   https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
