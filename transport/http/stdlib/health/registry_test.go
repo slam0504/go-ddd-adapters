@@ -2,8 +2,12 @@ package health_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	corehealth "github.com/slam0504/go-ddd-core/ports/health"
@@ -69,6 +73,42 @@ func TestRegistry_MustRegisterPanicsOnDuplicate(t *testing.T) {
 		}
 	}()
 	r.MustRegister(corehealth.NewCheck("postgres", okFn))
+}
+
+// TestRegistry_LivenessAlways200_DoesNotInvokeChecks pins the liveness
+// contract: /healthz is dep-free, always 200, and must NOT execute any
+// registered Check (a failing dep must not cause an orchestrator to
+// restart the pod).
+func TestRegistry_LivenessAlways200_DoesNotInvokeChecks(t *testing.T) {
+	var invocations atomic.Int32
+
+	r := &health.Registry{}
+	r.MustRegister(corehealth.NewCheck("alwaysFails", func(_ context.Context) error {
+		invocations.Add(1)
+		return errors.New("would-be-failure")
+	}))
+
+	rec := httptest.NewRecorder()
+	r.LivenessHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v (raw=%q)", err, rec.Body.String())
+	}
+	if body.Status != "ok" {
+		t.Fatalf("status = %q, want ok", body.Status)
+	}
+	if n := invocations.Load(); n != 0 {
+		t.Fatalf("registered Check was invoked %d times; liveness must run no Checks", n)
+	}
 }
 
 func TestRegistry_EmptyNameRejected(t *testing.T) {
