@@ -1,35 +1,42 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-25 Asia/Taipei (on `main` after PR #21 merge — bookkeeping pass only, no CI re-run)
-Source: `git log main --oneline -10` shows merge commit `d9c7324`
-(`Merge pull request #21 from slam0504/feat/transport-http-stdlib-v0.5.0`).
-PR #21's CI was 5/5 green at merge tip (build+test root 1m7s +
-`examples/orders` 1m20s, golangci-lint root 48s + `examples/orders`
-48s, integration testcontainers 1m26s — workflow run
-26404116334). `git status --short` shows only the expected
-local-only set after this commit lands
-(`?? .agent/context-checkpoint.log`, `?? .agent/session-checkpoint.md`,
-`?? .serena/`).
+Last verified: 2026-05-26 Asia/Taipei (on `main` after PR #22 merge and `v0.5.0` tag/release — bookkeeping pass only, no CI re-run)
+Source: `git log main --oneline -10` shows merge commit `45274dd`
+(`Merge pull request #22 from slam0504/chore/v0.5.0-tag-bookkeeping`).
+PR #22's CI was 5/5 green at merge tip (build+test root 1m12s +
+`examples/orders` 1m25s, golangci-lint root 52s + `examples/orders`
+54s, integration testcontainers 1m17s — workflow run
+26409070511). Adapter `v0.5.0` annotated at `45274dd` (tag object
+`a02f6d4`), pushed; GitHub Release marked Latest at
+https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.5.0.
+`git status --short` shows only the expected local-only set after
+this commit lands (`?? .agent/context-checkpoint.log`,
+`?? .agent/session-checkpoint.md`, `?? .serena/`).
 
 ## Current Branch
 
 - working tree: on `main` (this bookkeeping commit). `.serena/`,
   `.agent/context-checkpoint.log`, `.agent/session-checkpoint.md`
   remain untracked / local-only.
-- main: `d9c7324` (HEAD as of 2026-05-25, post PR #21 merge —
-  v0.5.0 `transport/http/stdlib` + health adapter implementation).
+- main: `45274dd` (HEAD as of 2026-05-26, post PR #22 merge —
+  dep-bump core pseudo-version → `v0.5.0`).
+- previous main: `d9c7324` (post PR #21 merge, v0.5.0
+  `transport/http/stdlib` + health adapter implementation).
 - previous main: `1dbbfdb` (post PR #20 merge,
   `orders.version` optimistic-locking activation).
 - previous main: `e6b1672` (post PR #19 merge, `examples/orders`
   pgx outbox demo).
 - previous main: `b9696f6` (post PR #18 merge, `go-ddd-core` bump to v0.4.0)
-- tags present in repo: `v0.1.0`, `v0.2.0`, `v0.3.0`, **`v0.4.0`**
-  (annotated, pushed 2026-05-20; GitHub Release marked Latest at
-  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
-  `v0.4.0` points at merge commit `bc9b041`; `v0.3.0` points at
-  `3ce2a23`. PR #21 ships **no** tag yet — the adapter `v0.5.0`
-  tag is gated on the 4-step tag-gate (see Open Items below).
+- tags present in repo: `v0.1.0`, `v0.2.0`, `v0.3.0`, `v0.4.0`,
+  **`v0.5.0`** (annotated, pushed 2026-05-26; GitHub Release marked
+  Latest at
+  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.5.0).
+  `v0.5.0` points at merge commit `45274dd` (tag object `a02f6d4`);
+  `v0.4.0` points at `bc9b041`; `v0.3.0` at `3ce2a23`.
 - latest commits on `main`:
+  - `45274dd` `Merge pull request #22 from slam0504/chore/v0.5.0-tag-bookkeeping`
+  - `1ca3239` `chore(release): bump core dependency to v0.5.0`
+  - `543d725` `chore(agent-memory): record v0.5.0 transport adapter implementation merge`
   - `d9c7324` `Merge pull request #21 from slam0504/feat/transport-http-stdlib-v0.5.0`
   - `ee0d6cf` `docs(decisions): record v0.5.0 transport/http/stdlib + health cycle`
   - `c528261` `test(transport/http/stdlib): satisfy lint in HTTP tests`
@@ -37,36 +44,45 @@ local-only set after this commit lands
   - `c0ba5f7` `docs(transport/http/stdlib/health): package doc with endpoint semantics`
   - `dfd6516` `docs(transport/http/stdlib/health): drop misleading 'Go 1.22' from Handler doc`
   - `0609bff` `feat(transport/http/stdlib/health): Handler combines /healthz + /readyz`
-  - `2f01fb9` `test(transport/http/stdlib/health): cover per-Check ProbeTimeout`
-  - `6ae65d4` `feat(transport/http/stdlib/health): ReadinessHandler with stable, sequential checks`
-  - `58440fc` `feat(transport/http/stdlib/health): LivenessHandler always 200, no Check invocation`
 
 ## Current Status
 
-- **v0.5.0 `transport/http/stdlib` + health adapter implementation
-  shipped** (PR #21 merged 2026-05-25 at merge commit `d9c7324`).
-  CI 5/5 green at merge tip: build+test root 1m7s, build+test
-  `examples/orders` 1m20s, golangci-lint root 48s + `examples/orders`
-  48s, integration testcontainers 1m26s (workflow run 26404116334).
-  New packages `transport/http/stdlib` (server adapter with
-  synchronous bind, `Server.Addr()` for `:0`, graceful shutdown
-  with `WithShutdownTimeout`; package-level `Module(...)` is
-  exactly `New(...).Module()`) and `transport/http/stdlib/health`
-  (Registry + `LivenessHandler` always 200 with no Check execution
-  + `ReadinessHandler` sequential with per-Check ProbeTimeout
-  default 2s + `Handler()` exact-path mux with
-  `http.StripPrefix("/admin", ...)` for prefix mounts). Core dep
-  pinned to pseudo-version
-  `v0.4.1-0.20260525111413-53fd5b2404d4` (core `main` @ `53fd5b2`,
-  PR #6 contract) — to be swapped to `v0.5.0` once core tags
-  (see Open Items below). Spec at
+- **v0.5.0 `transport/http/stdlib` + health release cycle is CLOSED**
+  (joint cycle with go-ddd-core; adapter `v0.5.0` annotated at
+  `45274dd` on 2026-05-26, tag object `a02f6d4`, GitHub Release
+  marked Latest at
+  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.5.0).
+  All four tag-gate steps done: (1) PR #21 (impl) merged
+  `d9c7324` 2026-05-25 CI 5/5 green workflow 26404116334, under
+  the pseudo-version pin `v0.4.1-0.20260525111413-53fd5b2404d4`;
+  (2) core annotated `v0.5.0` 2026-05-25 at core commit `e2ee2bb`;
+  (3) PR #22 (dep bump) merged `45274dd` 2026-05-26 CI 5/5 green
+  workflow 26409070511, swapping the pseudo-version → `v0.5.0`
+  on both root and `examples/orders`; (4) adapter `v0.5.0`
+  annotated + pushed + GitHub Release Latest. Downstream services
+  can now pin via `go get
+  github.com/slam0504/go-ddd-adapters@v0.5.0`. New packages
+  `transport/http/stdlib` (`New(addr, handler, opts...) *Server`
+  primary surface; synchronous bind; `Server.Addr()` for
+  `127.0.0.1:0` ephemeral ports; graceful shutdown via
+  `WithShutdownTimeout` default 15s, returns
+  `context.DeadlineExceeded` on timeout; package-level
+  `Module(...)` = `New(...).Module()` wrapper) and
+  `transport/http/stdlib/health` (`Registry` zero-value usable,
+  empty-name + duplicate-name guards; `LivenessHandler` always
+  200 with no Check execution; `ReadinessHandler` sequential per-
+  Check with `SetProbeTimeout` default 2s, body always lists
+  every Check on both 200 and 503; `Handler()` exact-path mux
+  with `http.StripPrefix("/admin", reg.Handler())` for prefix
+  mounts). Spec at
   `docs/superpowers/specs/2026-05-25-v0.5.0-transport-http-stdlib.md`;
   plan at
   `docs/superpowers/plans/2026-05-25-v0.5.0-transport-http-stdlib.md`;
   cycle decisions in `.agent/decisions.md` under
-  "v0.5.0 transport/http/stdlib + health (2026-05-25 cycle)". PR
-  #21 ships **no tag** — the adapter `v0.5.0` annotated tag is
-  the last step of the joint cycle and is blocked on core.
+  "v0.5.0 transport/http/stdlib + health (2026-05-25 cycle)".
+  Hard rule preserved: contract gaps go back to core first — no
+  adapter-side shim (none was needed; the
+  `ports/health.Check`/`NewCheck` contract was used verbatim).
 - **`orders.version` optimistic-locking cycle is CLOSED** (PR #20
   merged 2026-05-25 19:24 +0800 at merge commit `1dbbfdb`).
   `pgxrepo.Save` now uses a SQL-encoded `EXCLUDED.version - 1`
@@ -187,28 +203,15 @@ local-only set after this commit lands
 
 ## Open Items
 
-- **v0.5.0 release cycle — tag gate PENDING** (adapter
-  implementation merged at `d9c7324`, but the joint release is
-  blocked on go-ddd-core tagging `v0.5.0`). Step 1 of the 4-step
-  gate is done; steps 2-4 remain:
-  1. ✅ Adapter PR #21 merged on `main` (`d9c7324`), CI 5/5 green
-     at the pseudo-version pin
-     (`v0.4.1-0.20260525111413-53fd5b2404d4`).
-  2. ⏳ **go-ddd-core annotates + pushes `v0.5.0`** on its `main`
-     (core agent's responsibility; core `main` @ `53fd5b2` already
-     carries the `ports/health.Check` contract from core PR #6).
-  3. ⏳ Adapter `go.mod` + `examples/orders/go.mod` bumped from
-     the pseudo-version to `v0.5.0`; CI green at the bumped tip
-     (small follow-up PR).
-  4. ⏳ Adapter annotates + pushes `v0.5.0` (annotated tag, then
-     GitHub Release Latest, mirroring the v0.4.0 pattern).
-  Spec, plan, and cycle decisions remain authoritative at
-  `docs/superpowers/specs/2026-05-25-v0.5.0-transport-http-stdlib.md`,
-  `docs/superpowers/plans/2026-05-25-v0.5.0-transport-http-stdlib.md`,
-  and `.agent/decisions.md` "v0.5.0 transport/http/stdlib + health
-  (2026-05-25 cycle)". Hard rule preserved: if core's contract
-  proves insufficient before tagging, the change is pushed to core
-  first — no adapter-side shim.
+- ~~**v0.5.0 `transport/http/stdlib` + health release cycle**~~ ✅
+  CLOSED 2026-05-26. All four tag-gate steps done: PR #21 (impl)
+  merged `d9c7324` 2026-05-25; core annotated `v0.5.0` 2026-05-25
+  at `e2ee2bb`; PR #22 (dep bump) merged `45274dd` 2026-05-26;
+  adapter `v0.5.0` annotated at `45274dd` (tag object `a02f6d4`),
+  GitHub Release marked Latest at
+  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.5.0.
+  See Current Status above for the full summary. Follow-ups
+  preserved below.
 
 - ~~**v0.4.0 core-side removal**~~ ✅ resolved + delivered
   2026-05-21. Both gating conditions satisfied (Gate (i) adapters'
@@ -244,6 +247,13 @@ local-only set after this commit lands
     violation → 422, etc.). Today only `ErrConcurrencyConflict → 409`
     is wired (partial mapping by design; flagged in `cmd/api/main.go`
     with a `TODO` comment).
+  - **NEW follow-up — `examples/orders/cmd/api` migration to
+    `httpstdlib.Module`**: the example currently uses the
+    `cmd/internal/runtime.HTTPModule` ad-hoc helper. Migrating to
+    the public adapter from v0.5.0 was deliberately scoped out of
+    the release PR (kept it focused on the adapter surface); the
+    migration is a separate cycle once downstream adopters validate
+    the v0.5.0 API.
   - pgx projection for `cmd/reader` — reader still uses
     `infra/memrepo` in-memory store.
   - `eventbus/inbox/pgx` adapter + durable inbox / exactly-once
