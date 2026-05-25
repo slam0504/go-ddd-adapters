@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/slam0504/go-ddd-core/application"
 	"github.com/slam0504/go-ddd-core/application/command"
 	"github.com/slam0504/go-ddd-core/bootstrap"
+	"github.com/slam0504/go-ddd-core/domain"
 	"github.com/slam0504/go-ddd-core/eventbus"
 	"github.com/slam0504/go-ddd-core/ports/logger"
 
@@ -118,6 +120,13 @@ func routes(cmdBus *command.InMemoryBus, log logger.Logger) http.Handler {
 		})
 		if err != nil {
 			log.Log(r.Context(), logger.LevelWarn, "place order failed", logger.F("err", err.Error()))
+			if errors.Is(err, domain.ErrConcurrencyConflict) {
+				// TODO: full transport-error taxonomy (not-found → 404,
+				// rule violation → 422, etc.) is a separate cycle; this
+				// branch is the optimistic-locking-specific case only.
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
