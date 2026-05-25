@@ -59,13 +59,20 @@ func (r *OrderRepository) FindByID(ctx context.Context, id orderdom.ID) (*orderd
 	return orderdom.Hydrate(id, customer, orderdom.Status(status), version, totalCents, items), nil
 }
 
+// Save upserts the order, enforcing optimistic locking via the
+// EXCLUDED.version - 1 guard on the UPDATE branch. The invariant
+// aggregate.Version() == priorLoadedVersion + 1 holds in this example
+// because Order.Place / Order.Ship each call IncrementVersion exactly
+// once and are each followed by exactly one Save. A future use case
+// that stages multiple events per Save (Version() jumps by > 1) must
+// switch to an explicit loadedVersion field on the aggregate.
 func (r *OrderRepository) Save(ctx context.Context, o *orderdom.Order) error {
 	exec := pgxdb.Executor(ctx, r.pool)
 	itemsJSON, err := json.Marshal(o.Items())
 	if err != nil {
 		return fmt.Errorf("pgxrepo: encode items for %s: %w", o.ID(), err)
 	}
-	_, err = exec.Exec(ctx, `
+	cmd, err := exec.Exec(ctx, `
 		INSERT INTO orders (id, customer_id, status, version, total_cents, items)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (id) DO UPDATE SET
@@ -75,6 +82,7 @@ func (r *OrderRepository) Save(ctx context.Context, o *orderdom.Order) error {
 			total_cents = EXCLUDED.total_cents,
 			items       = EXCLUDED.items,
 			updated_at  = now()
+		WHERE orders.version = EXCLUDED.version - 1
 	`,
 		string(o.ID()),
 		o.CustomerID(),
@@ -85,6 +93,10 @@ func (r *OrderRepository) Save(ctx context.Context, o *orderdom.Order) error {
 	)
 	if err != nil {
 		return fmt.Errorf("pgxrepo: upsert order %s: %w", o.ID(), err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return fmt.Errorf("pgxrepo: optimistic lock conflict on order %s: %w",
+			o.ID(), domain.ErrConcurrencyConflict)
 	}
 	return nil
 }
