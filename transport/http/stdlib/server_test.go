@@ -2,6 +2,7 @@ package httpstdlib_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -168,6 +169,71 @@ func TestServer_StopWaitsForInFlightRequest(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Stop did not return after release (deadlock guard)")
+	}
+}
+
+// TestServer_StopRespectsShutdownTimeout pins that when a handler
+// outlasts WithShutdownTimeout, Stop returns context.DeadlineExceeded.
+//
+// Assertion is on the returned error, not elapsed time. The 5 s
+// selects exist only as deadlock guards. WithShutdownTimeout=50 ms
+// is small enough that a hanging handler will always trip it but not
+// so small that scheduler jitter could miss the deadline firing.
+func TestServer_StopRespectsShutdownTimeout(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hang", func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	})
+
+	srv := httpstdlib.New("127.0.0.1:0", mux,
+		httpstdlib.WithShutdownTimeout(50*time.Millisecond),
+	)
+	mod := srv.Module()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mod.Start(ctx, nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	reqDone := make(chan struct{})
+	go func() {
+		defer close(reqDone)
+		resp, err := http.Get("http://" + srv.Addr() + "/hang")
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	t.Cleanup(func() {
+		// Release the still-hanging handler so the request goroutine
+		// drains and the server's Serve loop exits.
+		close(release)
+		select {
+		case <-reqDone:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("request goroutine did not drain (deadlock guard)")
+		}
+	})
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("handler did not start (deadlock guard)")
+	}
+
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopCancel()
+	err := mod.Stop(stopCtx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop err = %v, want context.DeadlineExceeded", err)
 	}
 }
 
