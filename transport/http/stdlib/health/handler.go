@@ -65,10 +65,10 @@ func (r *Registry) ReadinessHandler() http.Handler {
 }
 
 // Handler returns an http.Handler that serves both /healthz and
-// /readyz on a Go 1.22 method-aware ServeMux. The handler matches the
-// EXACT paths /healthz and /readyz — non-GET requests on those paths
-// return 405, and any other path returns 404 (both behaviours come
-// straight from net/http.ServeMux semantics).
+// /readyz on a method-aware net/http.ServeMux. The handler matches
+// the EXACT paths /healthz and /readyz — non-GET requests on those
+// paths return 405, and any other path returns 404 (both behaviours
+// come straight from net/http.ServeMux semantics).
 //
 // To mount under a prefix (e.g. behind an admin path), wrap with
 // http.StripPrefix:
