@@ -565,3 +565,97 @@ the brainstorm session whose spec lives at
   `memrepo` remains example-only and carries a one-line package-doc
   note that it does not enforce optimistic locking; deletion is a
   separate hygiene cycle (zero importers and zero tests post-PR #19).
+
+## v0.5.0 transport/http/stdlib + health (2026-05-25 cycle)
+
+Decisions locked at kickoff (2026-05-25) and confirmed at the
+implementation tip (branch `feat/transport-http-stdlib-v0.5.0`,
+verification matrix green at `c528261`).
+
+- **Package path**: `transport/http/stdlib`, pkg name `httpstdlib`.
+  The `/stdlib` suffix on the import path leaves room for `chi/`,
+  `gin/`, `fiber/` siblings without renaming this one. The pkg-name
+  alias avoids awkward `stdlib.New(...)` call sites.
+- **Primary surface = `New` + `Server.Module`** (not just a
+  package-level `Module`). `Server.Start` performs
+  `net.Listen("tcp", addr)` synchronously, records the resolved
+  listener address, and only then launches `Serve` in a goroutine.
+  This shape is what makes `Server.Addr()` observable for `:0`
+  ephemeral ports and what makes bind errors surface as a startup
+  error rather than a goroutine-only log line.
+- **Convenience `Module(addr, handler, opts...)`** is exactly
+  `New(addr, handler, opts...).Module()` — no separate code path.
+  Provided for call sites that don't need `Addr()`.
+- **Handler panic semantics are NOT the adapter's responsibility.**
+  `net/http` already recovers per-request panics; the adapter does
+  not install request middleware and does not promise a 500 on
+  panic. Spec §5.1 was revised mid-spec to lock this; the originally
+  planned `TestModule_PanicInHandlerRecovered` test was removed
+  before any code landed.
+- **Health endpoint semantics (locked)**:
+  - `/healthz` always 200, dep-free; runs no Check (a failing
+    dependency must NOT cause an orchestrator to restart the pod).
+  - `/readyz` runs every Check sequentially in registration order,
+    each under `SetProbeTimeout` (default 2s). 200 when every Check
+    returns nil; 503 when any fails. Body always lists every Check
+    on both paths so operators see partial-failure state.
+  - Empty registry → 200 with `"checks":[]` (not null). Encoded by
+    omitting `omitempty` on the readiness `checks` field.
+  - Only GET; other methods → 405 (provided by Go's method-aware
+    `net/http.ServeMux`).
+- **Registry guards** — `Register` rejects empty names with
+  `health.ErrEmptyCheckName` and duplicate names with a wrapped
+  `"duplicate check name %q"` error; failed `Register` does NOT
+  mutate state (early returns before the mutation block, and the
+  map-write is guarded inside the dup-lookup miss path).
+  `MustRegister` panics on `Register` error. Empty-name rejection
+  is a spec extension beyond the original draft — added at kickoff
+  per the "fail loud at startup" intent.
+- **Sequential Check execution** — handler iterates the snapshot
+  serially, per-Check `context.WithTimeout`, error in one Check
+  does not short-circuit the loop. Test pins this with a shared
+  atomic counter (each Check captures its sequence number; values
+  must be `0,1,2` in registration order — concurrent execution
+  would race).
+- **`Handler()` routing — exact path + `http.StripPrefix`** for
+  prefix mounting. Suffix routing was floated in an early spec
+  draft but rejected as too magical (§5.2 revised mid-cycle).
+  Callers that want `/admin/healthz` use
+  `http.StripPrefix("/admin", reg.Handler())`.
+- **`/healthz` runs no Check** — pinned explicitly by registering a
+  failing Check whose fn atomic-counts invocations; counter must
+  stay 0 across the liveness call.
+- **No shim around core**. The `ports/health.Check` +
+  `NewCheck(name, fn)` contract was used verbatim from core
+  `main` @ `53fd5b2` (PR #6 merge `dce1154`). If the contract had
+  proven insufficient mid-implementation, the cycle would have
+  paused and the change pushed to core first. None was needed.
+- **`examples/orders/cmd/api` NOT migrated** in this cycle. The
+  existing `runtime.HTTPModule` (cmd/internal) keeps working
+  unchanged; migrating it to `httpstdlib.Module` is an explicit
+  follow-up cycle to avoid bloating the release PR.
+- **Dev-time dependency** = core pseudo-version
+  `v0.4.1-0.20260525111413-53fd5b2404d4` pinned in both
+  `go.mod` and `examples/orders/go.mod` for the duration of the
+  cycle. Local `replace` was explicitly rejected (would break CI
+  and contaminate the committed module graph).
+- **Tag-step gate** (4-step sequence, executable form of core's
+  "Tag at the last piece of the cycle, not the first"):
+  1. Adapter PR merged on `main`, CI green at the pseudo-version pin.
+  2. Core annotates + pushes `v0.5.0`.
+  3. Adapter `go.mod` + `examples/orders/go.mod` bumped from the
+     pseudo-version to `v0.5.0`; CI green at the bumped tip.
+  4. *Then* annotate + push the adapter's `v0.5.0` tag.
+
+Verification at the implementation tip (`c528261`, 2026-05-25):
+
+- Root: `go build / vet / test / test -tags=integration`,
+  `golangci-lint v2.5.0` default and `--build-tags=integration` —
+  all green.
+- `examples/orders`: same matrix plus
+  `go test -count=1 -tags=integration -race ./integration/...`
+  (Docker-backed, 23.678s) — all green.
+- HTTP-only integration test at
+  `transport/http/stdlib/integration` exercises the bootstrap.App
+  lifecycle with two `httpstdlib.New` servers (main + admin) and
+  the toggleable Check; no Docker / testcontainers in this cycle.
