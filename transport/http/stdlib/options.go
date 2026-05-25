@@ -1,5 +1,3 @@
-// Package httpstdlib is a thin bootstrap-aware adapter around net/http
-// for inbound HTTP transport. See doc.go for an overview.
 package httpstdlib
 
 import (
