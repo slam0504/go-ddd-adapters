@@ -1,6 +1,9 @@
 // Package memrepo is an in-memory implementation of the Order Repository.
 // Real services would back this with Postgres / DynamoDB / etc; the example
 // keeps it in memory to focus on the adapter wiring instead of the storage.
+//
+// Note: this in-memory repository is example-only and does not enforce
+// optimistic locking; use pgxrepo for production-grade conflict semantics.
 package memrepo
 
 import (
