@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/slam0504/go-ddd-adapters/transport/http/stdlib"
+	httpstdlib "github.com/slam0504/go-ddd-adapters/transport/http/stdlib"
 )
 
 // TestServer_StartBindsListenerSynchronously pins the primary public
@@ -53,7 +53,7 @@ func TestServer_StartBindsListenerSynchronously(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /ping: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
@@ -118,7 +118,7 @@ func TestServer_StopWaitsForInFlightRequest(t *testing.T) {
 			resCh <- result{err: err}
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		b, _ := io.ReadAll(resp.Body)
 		resCh <- result{status: resp.StatusCode, body: string(b)}
 	}()
@@ -301,7 +301,7 @@ func TestModule_ConvenienceWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /ok: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}

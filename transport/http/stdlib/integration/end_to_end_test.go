@@ -72,7 +72,7 @@ func TestEndToEnd_MainAndAdminServers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("main GET /ping: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("main /ping status = %d, want 200", resp.StatusCode)
 	}
@@ -114,7 +114,7 @@ func mustStatus(t *testing.T, url string, want int) {
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != want {
 		t.Fatalf("GET %s status = %d, want %d", url, resp.StatusCode, want)
 	}
@@ -126,11 +126,10 @@ func mustGetBody(t *testing.T, url string) string {
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read body %s: %v", url, err)
 	}
 	return string(b)
 }
-
