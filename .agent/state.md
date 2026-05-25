@@ -159,6 +159,26 @@ shows only the expected local-only set after this commit lands
 
 ## Open Items
 
+- **v0.5.0 `transport/http/stdlib` + health adapter** — in-flight
+  (kickoff 2026-05-25, branch `feat/transport-http-stdlib-v0.5.0`).
+  Spec: `docs/superpowers/specs/2026-05-25-v0.5.0-transport-http-stdlib.md`
+  (APPROVED 2026-05-25, with §5.1 synchronous-bind / `Server`
+  constructor + §6.1 panic-test removal revisions applied). Plan:
+  `docs/superpowers/plans/2026-05-25-v0.5.0-transport-http-stdlib.md`
+  (APPROVED 2026-05-25; Task 2 establishes `New(...) *Server` +
+  `Server.Module() bootstrap.ModuleFunc` as primary surface; Task 7
+  is the package-level `Module(...)` convenience wrapper). Cross-repo:
+  depends on go-ddd-core's `ports/health.Check` + `NewCheck(name, fn)`
+  contract on core `main` @ `53fd5b2` (PR #6 merge `dce1154`), not yet
+  tagged `v0.5.0`. Core dep is pinned to pseudo-version
+  `v0.4.1-0.20260525111413-53fd5b2404d4` for the cycle and will be
+  swapped to `v0.5.0` at the tag-step gate (4-step sequence:
+  adapter PR merge → core annotates `v0.5.0` → adapter
+  `go.mod` + `examples/orders/go.mod` bumped → adapter annotates
+  `v0.5.0`). Hard rule: if the core contract turns out to be
+  insufficient mid-implementation, the change is pushed back to core
+  first — no adapter-side shim.
+
 - ~~**v0.4.0 core-side removal**~~ ✅ resolved + delivered
   2026-05-21. Both gating conditions satisfied (Gate (i) adapters'
   `v0.4.0` tag at `bc9b041` on 2026-05-20; Gate (ii) downstream
