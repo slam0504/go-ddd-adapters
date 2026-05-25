@@ -3,6 +3,7 @@ package httpstdlib_test
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -58,5 +59,42 @@ func TestServer_StartBindsListenerSynchronously(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "pong" {
 		t.Fatalf("body = %q, want pong", string(body))
+	}
+}
+
+// TestServer_AddrEmptyBeforeStart pins that Addr returns "" until a
+// successful Start has bound a listener.
+func TestServer_AddrEmptyBeforeStart(t *testing.T) {
+	srv := httpstdlib.New("127.0.0.1:0", http.NewServeMux())
+	if got := srv.Addr(); got != "" {
+		t.Fatalf("Addr before Start = %q, want empty", got)
+	}
+}
+
+// TestServer_StartBindErrorReturned pins that a port-conflict surfaces
+// as a Start error synchronously and leaves Addr empty.
+//
+// The conflicting listener is created via net.Listen directly (not via
+// a second httpstdlib.Server) so the test exercises only the
+// adapter-under-test's bind code path.
+func TestServer_StartBindErrorReturned(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("occupy listener: %v", err)
+	}
+	t.Cleanup(func() { _ = occupied.Close() })
+
+	srv := httpstdlib.New(occupied.Addr().String(), http.NewServeMux())
+	mod := srv.Module()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startErr := mod.Start(ctx, nil)
+	if startErr == nil {
+		t.Fatalf("Start: expected bind error, got nil")
+	}
+	if srv.Addr() != "" {
+		t.Fatalf("Addr after failed Start = %q, want empty", srv.Addr())
 	}
 }
