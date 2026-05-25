@@ -237,6 +237,25 @@ func TestServer_StopRespectsShutdownTimeout(t *testing.T) {
 	}
 }
 
+// TestServer_ModuleNameDefaultAndOverride pins module name behaviour
+// straight off the returned bootstrap.ModuleFunc — no Start needed.
+func TestServer_ModuleNameDefaultAndOverride(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		srv := httpstdlib.New("127.0.0.1:0", http.NewServeMux())
+		if got, want := srv.Module().ModuleName, "http:127.0.0.1:0"; got != want {
+			t.Fatalf("ModuleName = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("override", func(t *testing.T) {
+		srv := httpstdlib.New("127.0.0.1:0", http.NewServeMux(),
+			httpstdlib.WithModuleName("admin-http"))
+		if got, want := srv.Module().ModuleName, "admin-http"; got != want {
+			t.Fatalf("ModuleName = %q, want %q", got, want)
+		}
+	})
+}
+
 // TestServer_StartBindErrorReturned pins that a port-conflict surfaces
 // as a Start error synchronously and leaves Addr empty.
 //
