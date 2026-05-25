@@ -256,6 +256,61 @@ func TestServer_ModuleNameDefaultAndOverride(t *testing.T) {
 	})
 }
 
+// TestModule_ConvenienceWrapper pins that the package-level Module(...)
+// shorthand is exactly New(...).Module(), composing the same code path
+// for Start / GET / Stop and honouring options like WithModuleName.
+//
+// Because the wrapper exposes no Server handle, the addr is reserved
+// up front by opening then closing a 127.0.0.1:0 listener; the brief
+// reuse race is acceptable for a local/CI test loop.
+func TestModule_ConvenienceWrapper(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve addr: %v", err)
+	}
+	addr := occupied.Addr().String()
+	if err := occupied.Close(); err != nil {
+		t.Fatalf("close reservation: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ok", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	})
+
+	mod := httpstdlib.Module(addr, mux, httpstdlib.WithModuleName("wrapped"))
+
+	if mod.ModuleName != "wrapped" {
+		t.Fatalf("ModuleName = %q, want %q (option must pass through wrapper)", mod.ModuleName, "wrapped")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mod.Start(ctx, nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopCancel()
+		if err := mod.Stop(stopCtx); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+	})
+
+	resp, err := http.Get("http://" + addr + "/ok")
+	if err != nil {
+		t.Fatalf("GET /ok: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "ok" {
+		t.Fatalf("body = %q, want ok", string(body))
+	}
+}
+
 // TestServer_StartBindErrorReturned pins that a port-conflict surfaces
 // as a Start error synchronously and leaves Addr empty.
 //
