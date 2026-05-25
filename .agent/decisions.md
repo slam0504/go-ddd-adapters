@@ -519,3 +519,49 @@ the brainstorm session whose spec lives at
     package needs to call this adapter directly, which is not a
     sibling of `cmd/internal/`. The sibling-of-cmd location keeps
     the function testable without further indirection.
+
+## orders.version optimistic locking activation (2026-05-23 cycle)
+
+- `examples/orders/infra/pgxrepo/order_repo.go` `Save` enforces optimistic
+  locking via the SQL clause `WHERE orders.version = EXCLUDED.version - 1`
+  on the `ON CONFLICT (id) DO UPDATE` branch. `cmd.RowsAffected() == 0`
+  is wrapped as `domain.ErrConcurrencyConflict`.
+- Four operating cases are documented in §5.2 of the design spec:
+  - INSERT path (fresh ID) is unaffected.
+  - Duplicate `Place` ⇒ UPDATE branch's WHERE evaluates false ⇒ conflict.
+  - First `Ship` writer of a loaded snapshot ⇒ success.
+  - Second `Ship` writer of the same loaded snapshot ⇒ conflict.
+- Invariant pinned in the `Save` doc comment:
+  `aggregate.Version() == priorLoadedVersion + 1` for every Save in this
+  example. Holds because `Order.Place` and `Order.Ship` each call
+  `IncrementVersion` exactly once and are each followed by exactly one
+  Save. A future use case that stages multiple events per Save must
+  introduce an explicit `loadedVersion` field on the aggregate
+  (Pattern (B) from the brainstorm).
+- Rejected alternatives:
+  - Pattern (B) — explicit `loadedVersion` field on the aggregate.
+    Adds aggregate state for a property the SQL `-1` already encodes
+    in the current single-event-per-Save shape. Re-evaluate when the
+    invariant breaks.
+  - Insert/update split — separate `INSERT ... RETURNING` for Place and
+    a separate `UPDATE ... WHERE version = $loaded` for Ship. Doubles
+    the SQL surface and the round-trip count for the duplicate-Place
+    case, with no behavioural gain over the single upsert.
+- Tx atomicity carries outbox rollback: the "no extra `outbox_records`
+  row on conflict" property depends on `application.UnitOfWork` (via
+  `pgxdb.TxManager`) wrapping `Save` and `outbox.Stage` in the same tx
+  — contract established by PR #19, not touched in this cycle.
+- Retry policy lives in the transport layer: handlers never catch
+  `ErrConcurrencyConflict`. Kafka redelivery + aggregate rule-layer
+  idempotency (`ORDER_ALREADY_SHIPPED`) together complete the
+  reload-retry loop without any new code. No new test asserts this
+  redelivery path in this cycle — see spec §6.4 for the rationale.
+- `cmd/api` partial 409 mapping: `errors.Is(err,
+  domain.ErrConcurrencyConflict)` returns `http.StatusConflict (409)`
+  ahead of the generic 400 branch. Full HTTP error taxonomy (not-found
+  → 404, rule violation → 422) is the explicit follow-up cycle.
+- Scope boundary: no `go-ddd-core` change, no schema migration (the
+  `version` column already existed in `001_create_orders.up.sql`).
+  `memrepo` remains example-only and carries a one-line package-doc
+  note that it does not enforce optimistic locking; deletion is a
+  separate hygiene cycle (zero importers and zero tests post-PR #19).
