@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	corehealth "github.com/slam0504/go-ddd-core/ports/health"
 
@@ -288,6 +289,84 @@ func TestRegistry_ReadinessChecksRunSequentially(t *testing.T) {
 		if c.seenAt != int32(i) {
 			t.Fatalf("capture %d (%q) seenAt=%d, want %d (sequential)", i, c.name, c.seenAt, i)
 		}
+	}
+}
+
+// TestRegistry_ReadinessProbeTimeoutCancelsAndContinues pins three
+// properties of the per-Check ProbeTimeout:
+//
+//  1. A Check that respects ctx (waits on <-ctx.Done() and returns
+//     ctx.Err()) is canceled when the per-Check deadline elapses.
+//  2. The slow Check is reported as ok:false with an error wrapping
+//     context.DeadlineExceeded; overall status is 503.
+//  3. A later Check registered AFTER the slow one still runs and
+//     appears in the body. The handler must visit every Check
+//     regardless of earlier failures or timeouts.
+func TestRegistry_ReadinessProbeTimeoutCancelsAndContinues(t *testing.T) {
+	r := &health.Registry{}
+	r.SetProbeTimeout(25 * time.Millisecond)
+
+	var afterRan atomic.Bool
+
+	r.MustRegister(corehealth.NewCheck("slow", func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}))
+	r.MustRegister(corehealth.NewCheck("after", func(_ context.Context) error {
+		afterRan.Store(true)
+		return nil
+	}))
+
+	rec := httptest.NewRecorder()
+	r.ReadinessHandler().ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+
+	var b struct {
+		Status string `json:"status"`
+		Checks []struct {
+			Name  string `json:"name"`
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		} `json:"checks"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil {
+		t.Fatalf("decode: %v (raw=%q)", err, rec.Body.String())
+	}
+	if b.Status != "unhealthy" {
+		t.Fatalf("status = %q, want unhealthy", b.Status)
+	}
+
+	if len(b.Checks) != 2 {
+		t.Fatalf("len(checks) = %d, want 2 (slow + after)", len(b.Checks))
+	}
+
+	// Slow check: failed, error mentions deadline.
+	if b.Checks[0].Name != "slow" {
+		t.Fatalf("checks[0].name = %q, want slow", b.Checks[0].Name)
+	}
+	if b.Checks[0].OK {
+		t.Fatalf("checks[0] (slow) ok=true, want false")
+	}
+	// The check returns ctx.Err() which is context.DeadlineExceeded;
+	// its Error() text is exactly "context deadline exceeded".
+	if !strings.Contains(b.Checks[0].Error, context.DeadlineExceeded.Error()) {
+		t.Fatalf("checks[0] error = %q, want substring %q",
+			b.Checks[0].Error, context.DeadlineExceeded.Error())
+	}
+
+	// After check: still ran and reported as healthy.
+	if b.Checks[1].Name != "after" {
+		t.Fatalf("checks[1].name = %q, want after", b.Checks[1].Name)
+	}
+	if !b.Checks[1].OK {
+		t.Fatalf("checks[1] (after) ok=false, want true")
+	}
+	if !afterRan.Load() {
+		t.Fatalf("'after' check did not run — handler stopped at first failure")
 	}
 }
 
