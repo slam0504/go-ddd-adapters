@@ -1,0 +1,340 @@
+package httpstdlib_test
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	httpstdlib "github.com/slam0504/go-ddd-adapters/transport/http/stdlib"
+)
+
+// TestServer_StartBindsListenerSynchronously pins the primary public
+// surface: New(addr, handler, opts...) → *Server, srv.Module() →
+// bootstrap.ModuleFunc, srv.Addr() observable immediately after Start.
+//
+// 127.0.0.1:0 is used (not :0) so the OS picks an ephemeral port on
+// loopback explicitly, avoiding IPv6 / unspecified-address ambiguity in
+// the client URL.
+func TestServer_StartBindsListenerSynchronously(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ping", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "pong")
+	})
+
+	srv := httpstdlib.New("127.0.0.1:0", mux)
+	mod := srv.Module()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := mod.Start(ctx, nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopCancel()
+		_ = mod.Stop(stopCtx)
+	})
+
+	addr := srv.Addr()
+	if addr == "" {
+		t.Fatalf("Addr returned empty after Start")
+	}
+	if !strings.HasPrefix(addr, "127.0.0.1:") {
+		t.Fatalf("Addr = %q, want 127.0.0.1:<port>", addr)
+	}
+
+	resp, err := http.Get("http://" + addr + "/ping")
+	if err != nil {
+		t.Fatalf("GET /ping: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "pong" {
+		t.Fatalf("body = %q, want pong", string(body))
+	}
+}
+
+// TestServer_AddrEmptyBeforeStart pins that Addr returns "" until a
+// successful Start has bound a listener.
+func TestServer_AddrEmptyBeforeStart(t *testing.T) {
+	srv := httpstdlib.New("127.0.0.1:0", http.NewServeMux())
+	if got := srv.Addr(); got != "" {
+		t.Fatalf("Addr before Start = %q, want empty", got)
+	}
+}
+
+// TestServer_StopWaitsForInFlightRequest pins the graceful-shutdown
+// contract: Stop must NOT return while a handler is mid-request.
+//
+// The test drives synchronization with two channels (`started` for
+// "handler reached", `release` for "let handler finish") so the
+// assertions are causal rather than wall-clock-based. The bounded
+// select timeouts in this test are deadlock guards only — the only
+// timing-shaped wait is the brief 50 ms grace that lets the Stop
+// goroutine actually enter srv.Shutdown before we probe it (Stop
+// itself does not signal "I am inside Shutdown"), and that probe is
+// followed by a non-blocking select.
+func TestServer_StopWaitsForInFlightRequest(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /slow", func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-release:
+			_, _ = io.WriteString(w, "done")
+		case <-r.Context().Done():
+		}
+	})
+
+	srv := httpstdlib.New("127.0.0.1:0", mux)
+	mod := srv.Module()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mod.Start(ctx, nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	type result struct {
+		status int
+		body   string
+		err    error
+	}
+	resCh := make(chan result, 1)
+	go func() {
+		resp, err := http.Get("http://" + srv.Addr() + "/slow")
+		if err != nil {
+			resCh <- result{err: err}
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		resCh <- result{status: resp.StatusCode, body: string(b)}
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("handler did not start within 5s (deadlock guard)")
+	}
+
+	stopErrCh := make(chan error, 1)
+	go func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stopCancel()
+		stopErrCh <- mod.Stop(stopCtx)
+	}()
+
+	// 50ms grace so the Stop goroutine reaches srv.Shutdown.
+	// Once it is in Shutdown with an in-flight request, it must
+	// stay there until release — i.e. the assertion below is causal,
+	// not timing-based.
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case err := <-stopErrCh:
+		t.Fatalf("Stop returned before release: err=%v", err)
+	default:
+	}
+
+	close(release)
+
+	var res result
+	select {
+	case res = <-resCh:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("in-flight request did not finish (deadlock guard)")
+	}
+	if res.err != nil {
+		t.Fatalf("in-flight GET: %v", res.err)
+	}
+	if res.status != http.StatusOK || res.body != "done" {
+		t.Fatalf("in-flight result: status=%d body=%q", res.status, res.body)
+	}
+
+	select {
+	case err := <-stopErrCh:
+		if err != nil {
+			t.Fatalf("Stop returned error after release: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Stop did not return after release (deadlock guard)")
+	}
+}
+
+// TestServer_StopRespectsShutdownTimeout pins that when a handler
+// outlasts WithShutdownTimeout, Stop returns context.DeadlineExceeded.
+//
+// Assertion is on the returned error, not elapsed time. The 5 s
+// selects exist only as deadlock guards. WithShutdownTimeout=50 ms
+// is small enough that a hanging handler will always trip it but not
+// so small that scheduler jitter could miss the deadline firing.
+func TestServer_StopRespectsShutdownTimeout(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hang", func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	})
+
+	srv := httpstdlib.New("127.0.0.1:0", mux,
+		httpstdlib.WithShutdownTimeout(50*time.Millisecond),
+	)
+	mod := srv.Module()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mod.Start(ctx, nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	reqDone := make(chan struct{})
+	go func() {
+		defer close(reqDone)
+		resp, err := http.Get("http://" + srv.Addr() + "/hang")
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	t.Cleanup(func() {
+		// Release the still-hanging handler so the request goroutine
+		// drains and the server's Serve loop exits.
+		close(release)
+		select {
+		case <-reqDone:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("request goroutine did not drain (deadlock guard)")
+		}
+	})
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("handler did not start (deadlock guard)")
+	}
+
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopCancel()
+	err := mod.Stop(stopCtx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop err = %v, want context.DeadlineExceeded", err)
+	}
+}
+
+// TestServer_ModuleNameDefaultAndOverride pins module name behaviour
+// straight off the returned bootstrap.ModuleFunc — no Start needed.
+func TestServer_ModuleNameDefaultAndOverride(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		srv := httpstdlib.New("127.0.0.1:0", http.NewServeMux())
+		if got, want := srv.Module().ModuleName, "http:127.0.0.1:0"; got != want {
+			t.Fatalf("ModuleName = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("override", func(t *testing.T) {
+		srv := httpstdlib.New("127.0.0.1:0", http.NewServeMux(),
+			httpstdlib.WithModuleName("admin-http"))
+		if got, want := srv.Module().ModuleName, "admin-http"; got != want {
+			t.Fatalf("ModuleName = %q, want %q", got, want)
+		}
+	})
+}
+
+// TestModule_ConvenienceWrapper pins that the package-level Module(...)
+// shorthand is exactly New(...).Module(), composing the same code path
+// for Start / GET / Stop and honouring options like WithModuleName.
+//
+// Because the wrapper exposes no Server handle, the addr is reserved
+// up front by opening then closing a 127.0.0.1:0 listener; the brief
+// reuse race is acceptable for a local/CI test loop.
+func TestModule_ConvenienceWrapper(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve addr: %v", err)
+	}
+	addr := occupied.Addr().String()
+	if err := occupied.Close(); err != nil {
+		t.Fatalf("close reservation: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ok", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	})
+
+	mod := httpstdlib.Module(addr, mux, httpstdlib.WithModuleName("wrapped"))
+
+	if mod.ModuleName != "wrapped" {
+		t.Fatalf("ModuleName = %q, want %q (option must pass through wrapper)", mod.ModuleName, "wrapped")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mod.Start(ctx, nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopCancel()
+		if err := mod.Stop(stopCtx); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+	})
+
+	resp, err := http.Get("http://" + addr + "/ok")
+	if err != nil {
+		t.Fatalf("GET /ok: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "ok" {
+		t.Fatalf("body = %q, want ok", string(body))
+	}
+}
+
+// TestServer_StartBindErrorReturned pins that a port-conflict surfaces
+// as a Start error synchronously and leaves Addr empty.
+//
+// The conflicting listener is created via net.Listen directly (not via
+// a second httpstdlib.Server) so the test exercises only the
+// adapter-under-test's bind code path.
+func TestServer_StartBindErrorReturned(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("occupy listener: %v", err)
+	}
+	t.Cleanup(func() { _ = occupied.Close() })
+
+	srv := httpstdlib.New(occupied.Addr().String(), http.NewServeMux())
+	mod := srv.Module()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startErr := mod.Start(ctx, nil)
+	if startErr == nil {
+		t.Fatalf("Start: expected bind error, got nil")
+	}
+	if srv.Addr() != "" {
+		t.Fatalf("Addr after failed Start = %q, want empty", srv.Addr())
+	}
+}
