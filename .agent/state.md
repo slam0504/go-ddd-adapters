@@ -1,12 +1,13 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-25 Asia/Taipei (on `main` after PR #20 merge — bookkeeping pass only, no CI re-run)
-Source: `git log main --oneline -10` shows merge commit `1dbbfdb`
-(`Merge pull request #20 from slam0504/feat/orders-version-optimistic-locking`,
-merged 2026-05-25 19:24 +0800). PR #20's CI was 5/5 green at merge
-tip (build+test root + `examples/orders`, golangci-lint root +
-`examples/orders`, integration testcontainers). `git status --short`
-shows only the expected local-only set after this commit lands
+Last verified: 2026-05-25 Asia/Taipei (on `main` after PR #21 merge — bookkeeping pass only, no CI re-run)
+Source: `git log main --oneline -10` shows merge commit `d9c7324`
+(`Merge pull request #21 from slam0504/feat/transport-http-stdlib-v0.5.0`).
+PR #21's CI was 5/5 green at merge tip (build+test root 1m7s +
+`examples/orders` 1m20s, golangci-lint root 48s + `examples/orders`
+48s, integration testcontainers 1m26s — workflow run
+26404116334). `git status --short` shows only the expected
+local-only set after this commit lands
 (`?? .agent/context-checkpoint.log`, `?? .agent/session-checkpoint.md`,
 `?? .serena/`).
 
@@ -15,7 +16,9 @@ shows only the expected local-only set after this commit lands
 - working tree: on `main` (this bookkeeping commit). `.serena/`,
   `.agent/context-checkpoint.log`, `.agent/session-checkpoint.md`
   remain untracked / local-only.
-- main: `1dbbfdb` (HEAD as of 2026-05-25, post PR #20 merge —
+- main: `d9c7324` (HEAD as of 2026-05-25, post PR #21 merge —
+  v0.5.0 `transport/http/stdlib` + health adapter implementation).
+- previous main: `1dbbfdb` (post PR #20 merge,
   `orders.version` optimistic-locking activation).
 - previous main: `e6b1672` (post PR #19 merge, `examples/orders`
   pgx outbox demo).
@@ -24,21 +27,46 @@ shows only the expected local-only set after this commit lands
   (annotated, pushed 2026-05-20; GitHub Release marked Latest at
   https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.4.0).
   `v0.4.0` points at merge commit `bc9b041`; `v0.3.0` points at
-  `3ce2a23`. PR #20 ships **no** tag — it's example-only changes.
+  `3ce2a23`. PR #21 ships **no** tag yet — the adapter `v0.5.0`
+  tag is gated on the 4-step tag-gate (see Open Items below).
 - latest commits on `main`:
-  - `1dbbfdb` `Merge pull request #20 from slam0504/feat/orders-version-optimistic-locking`
-  - `0636314` `docs(superpowers): add orders.version optimistic locking spec and plan`
-  - `34cbc4b` `chore(agent-memory): record orders.version optimistic-locking cycle decisions`
-  - `68c1dcd` `docs(examples/orders): note memrepo lacks optimistic-locking enforcement`
-  - `3c082dc` `feat(examples/orders): map ErrConcurrencyConflict to HTTP 409 in cmd/api`
-  - `0d0ec79` `feat(examples/orders): pgxrepo.Save enforces orders.version optimistic lock`
-  - `e6b1672` `Merge pull request #19 from slam0504/feat/examples-orders-pgx-outbox`
-  - `4307eb6` `docs(plan): implementation plan for examples/orders pgx outbox demo`
-  - `e2a63dc` `chore(agent-memory): record examples/orders pgx outbox cycle`
-  - `5e73d29` `docs(examples/orders): document pgx outbox demo and remaining shortcuts`
+  - `d9c7324` `Merge pull request #21 from slam0504/feat/transport-http-stdlib-v0.5.0`
+  - `ee0d6cf` `docs(decisions): record v0.5.0 transport/http/stdlib + health cycle`
+  - `c528261` `test(transport/http/stdlib): satisfy lint in HTTP tests`
+  - `96e7fb7` `test(transport/http/stdlib): HTTP-only integration test for main+admin lifecycle`
+  - `c0ba5f7` `docs(transport/http/stdlib/health): package doc with endpoint semantics`
+  - `dfd6516` `docs(transport/http/stdlib/health): drop misleading 'Go 1.22' from Handler doc`
+  - `0609bff` `feat(transport/http/stdlib/health): Handler combines /healthz + /readyz`
+  - `2f01fb9` `test(transport/http/stdlib/health): cover per-Check ProbeTimeout`
+  - `6ae65d4` `feat(transport/http/stdlib/health): ReadinessHandler with stable, sequential checks`
+  - `58440fc` `feat(transport/http/stdlib/health): LivenessHandler always 200, no Check invocation`
 
 ## Current Status
 
+- **v0.5.0 `transport/http/stdlib` + health adapter implementation
+  shipped** (PR #21 merged 2026-05-25 at merge commit `d9c7324`).
+  CI 5/5 green at merge tip: build+test root 1m7s, build+test
+  `examples/orders` 1m20s, golangci-lint root 48s + `examples/orders`
+  48s, integration testcontainers 1m26s (workflow run 26404116334).
+  New packages `transport/http/stdlib` (server adapter with
+  synchronous bind, `Server.Addr()` for `:0`, graceful shutdown
+  with `WithShutdownTimeout`; package-level `Module(...)` is
+  exactly `New(...).Module()`) and `transport/http/stdlib/health`
+  (Registry + `LivenessHandler` always 200 with no Check execution
+  + `ReadinessHandler` sequential with per-Check ProbeTimeout
+  default 2s + `Handler()` exact-path mux with
+  `http.StripPrefix("/admin", ...)` for prefix mounts). Core dep
+  pinned to pseudo-version
+  `v0.4.1-0.20260525111413-53fd5b2404d4` (core `main` @ `53fd5b2`,
+  PR #6 contract) — to be swapped to `v0.5.0` once core tags
+  (see Open Items below). Spec at
+  `docs/superpowers/specs/2026-05-25-v0.5.0-transport-http-stdlib.md`;
+  plan at
+  `docs/superpowers/plans/2026-05-25-v0.5.0-transport-http-stdlib.md`;
+  cycle decisions in `.agent/decisions.md` under
+  "v0.5.0 transport/http/stdlib + health (2026-05-25 cycle)". PR
+  #21 ships **no tag** — the adapter `v0.5.0` annotated tag is
+  the last step of the joint cycle and is blocked on core.
 - **`orders.version` optimistic-locking cycle is CLOSED** (PR #20
   merged 2026-05-25 19:24 +0800 at merge commit `1dbbfdb`).
   `pgxrepo.Save` now uses a SQL-encoded `EXCLUDED.version - 1`
@@ -159,24 +187,27 @@ shows only the expected local-only set after this commit lands
 
 ## Open Items
 
-- **v0.5.0 `transport/http/stdlib` + health adapter** — in-flight
-  (kickoff 2026-05-25, branch `feat/transport-http-stdlib-v0.5.0`).
-  Spec: `docs/superpowers/specs/2026-05-25-v0.5.0-transport-http-stdlib.md`
-  (APPROVED 2026-05-25, with §5.1 synchronous-bind / `Server`
-  constructor + §6.1 panic-test removal revisions applied). Plan:
-  `docs/superpowers/plans/2026-05-25-v0.5.0-transport-http-stdlib.md`
-  (APPROVED 2026-05-25; Task 2 establishes `New(...) *Server` +
-  `Server.Module() bootstrap.ModuleFunc` as primary surface; Task 7
-  is the package-level `Module(...)` convenience wrapper). Cross-repo:
-  depends on go-ddd-core's `ports/health.Check` + `NewCheck(name, fn)`
-  contract on core `main` @ `53fd5b2` (PR #6 merge `dce1154`), not yet
-  tagged `v0.5.0`. Core dep is pinned to pseudo-version
-  `v0.4.1-0.20260525111413-53fd5b2404d4` for the cycle and will be
-  swapped to `v0.5.0` at the tag-step gate (4-step sequence:
-  adapter PR merge → core annotates `v0.5.0` → adapter
-  `go.mod` + `examples/orders/go.mod` bumped → adapter annotates
-  `v0.5.0`). Hard rule: if the core contract turns out to be
-  insufficient mid-implementation, the change is pushed back to core
+- **v0.5.0 release cycle — tag gate PENDING** (adapter
+  implementation merged at `d9c7324`, but the joint release is
+  blocked on go-ddd-core tagging `v0.5.0`). Step 1 of the 4-step
+  gate is done; steps 2-4 remain:
+  1. ✅ Adapter PR #21 merged on `main` (`d9c7324`), CI 5/5 green
+     at the pseudo-version pin
+     (`v0.4.1-0.20260525111413-53fd5b2404d4`).
+  2. ⏳ **go-ddd-core annotates + pushes `v0.5.0`** on its `main`
+     (core agent's responsibility; core `main` @ `53fd5b2` already
+     carries the `ports/health.Check` contract from core PR #6).
+  3. ⏳ Adapter `go.mod` + `examples/orders/go.mod` bumped from
+     the pseudo-version to `v0.5.0`; CI green at the bumped tip
+     (small follow-up PR).
+  4. ⏳ Adapter annotates + pushes `v0.5.0` (annotated tag, then
+     GitHub Release Latest, mirroring the v0.4.0 pattern).
+  Spec, plan, and cycle decisions remain authoritative at
+  `docs/superpowers/specs/2026-05-25-v0.5.0-transport-http-stdlib.md`,
+  `docs/superpowers/plans/2026-05-25-v0.5.0-transport-http-stdlib.md`,
+  and `.agent/decisions.md` "v0.5.0 transport/http/stdlib + health
+  (2026-05-25 cycle)". Hard rule preserved: if core's contract
+  proves insufficient before tagging, the change is pushed to core
   first — no adapter-side shim.
 
 - ~~**v0.4.0 core-side removal**~~ ✅ resolved + delivered
