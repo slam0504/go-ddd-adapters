@@ -370,6 +370,111 @@ func TestRegistry_ReadinessProbeTimeoutCancelsAndContinues(t *testing.T) {
 	}
 }
 
+// TestRegistry_HandlerExposesBothPaths verifies that r.Handler()
+// multiplexes liveness and readiness on the canonical exact paths.
+func TestRegistry_HandlerExposesBothPaths(t *testing.T) {
+	r := &health.Registry{}
+	r.MustRegister(corehealth.NewCheck("ok", okFn))
+	h := r.Handler()
+
+	t.Run("GET /healthz", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		var b struct {
+			Status string          `json:"status"`
+			Checks json.RawMessage `json:"checks"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &b)
+		if b.Status != "ok" {
+			t.Fatalf("status = %q, want ok", b.Status)
+		}
+		if b.Checks != nil {
+			t.Fatalf("liveness body must not include checks; got %s", string(b.Checks))
+		}
+	})
+
+	t.Run("GET /readyz", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		var b struct {
+			Status string          `json:"status"`
+			Checks json.RawMessage `json:"checks"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &b)
+		if b.Status != "ok" {
+			t.Fatalf("status = %q, want ok", b.Status)
+		}
+		if b.Checks == nil {
+			t.Fatalf("readiness body must include checks field")
+		}
+	})
+}
+
+// TestRegistry_HandlerMethodNotAllowed verifies non-GET on the
+// registered paths returns 405 (provided by Go 1.22's method-aware mux).
+func TestRegistry_HandlerMethodNotAllowed(t *testing.T) {
+	r := &health.Registry{}
+	h := r.Handler()
+
+	for _, path := range []string{"/healthz", "/readyz"} {
+		t.Run("POST "+path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("POST %s status = %d, want 405", path, rec.Code)
+			}
+		})
+	}
+}
+
+// TestRegistry_HandlerUnknownPath verifies any path other than
+// /healthz or /readyz returns 404 (provided by the mux).
+func TestRegistry_HandlerUnknownPath(t *testing.T) {
+	r := &health.Registry{}
+	h := r.Handler()
+
+	for _, path := range []string{"/", "/nope", "/healthzz", "/admin/healthz"} {
+		t.Run("GET "+path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("GET %s status = %d, want 404", path, rec.Code)
+			}
+		})
+	}
+}
+
+// TestRegistry_HandlerMountsViaStripPrefix verifies the documented
+// prefix-mounting pattern: wrap r.Handler() with http.StripPrefix to
+// serve /admin/healthz and /admin/readyz on an admin server's mux.
+func TestRegistry_HandlerMountsViaStripPrefix(t *testing.T) {
+	r := &health.Registry{}
+	r.MustRegister(corehealth.NewCheck("ok", okFn))
+	mounted := http.StripPrefix("/admin", r.Handler())
+
+	for _, tc := range []struct {
+		path string
+		want int
+	}{
+		{"/admin/healthz", http.StatusOK},
+		{"/admin/readyz", http.StatusOK},
+	} {
+		t.Run("GET "+tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			mounted.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rec.Code != tc.want {
+				t.Fatalf("GET %s status = %d, want %d", tc.path, rec.Code, tc.want)
+			}
+		})
+	}
+}
+
 func TestRegistry_EmptyNameRejected(t *testing.T) {
 	r := &health.Registry{}
 	err := r.Register(corehealth.NewCheck("", okFn))

@@ -64,6 +64,27 @@ func (r *Registry) ReadinessHandler() http.Handler {
 	})
 }
 
+// Handler returns an http.Handler that serves both /healthz and
+// /readyz on a Go 1.22 method-aware ServeMux. The handler matches the
+// EXACT paths /healthz and /readyz — non-GET requests on those paths
+// return 405, and any other path returns 404 (both behaviours come
+// straight from net/http.ServeMux semantics).
+//
+// To mount under a prefix (e.g. behind an admin path), wrap with
+// http.StripPrefix:
+//
+//	mounted := http.StripPrefix("/admin", reg.Handler())
+//	// /admin/healthz and /admin/readyz now route correctly.
+//
+// Suffix routing is intentionally not provided — callers that need
+// prefix mounting use StripPrefix, the standard stdlib idiom.
+func (r *Registry) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /healthz", r.LivenessHandler())
+	mux.Handle("GET /readyz", r.ReadinessHandler())
+	return mux
+}
+
 type livenessBody struct {
 	Status string `json:"status"`
 }
