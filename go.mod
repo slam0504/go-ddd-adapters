@@ -10,7 +10,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/slam0504/go-ddd-core v0.6.1-0.20260605060735-47e02fa632a8
+	github.com/slam0504/go-ddd-core v0.7.0
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	go.opentelemetry.io/otel v1.41.0

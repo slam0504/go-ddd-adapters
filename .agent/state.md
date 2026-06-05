@@ -85,11 +85,23 @@ HEAD `47e02fa`, not yet tagged). Phase A only.
 - OUT of scope this cycle: HTTP enforcement middleware (Phase B) and
   `examples/orders` AuthZ wiring (Phase C).
 - Status: Phase A MERGED to `main` via PR #25 (merge commit `9a715e1`,
-  2026-06-05), CI 5/5 green. Locally verified: root build/vet/test,
-  -race auth/casbin, integration real-casbin, examples/orders all green;
-  golangci-lint v2 (`/usr/local/bin/golangci-lint`) clean (0 issues on
-  `./...`). Pending: the v0.7.0 cross-repo tag-gate (out of scope of this
-  PR — see the spec §10).
+  2026-06-05), CI 5/5 green at the pseudo-version pin.
+- Tag-gate (spec §10) progress:
+  1. ✅ Adapter impl PR #25 merged, CI green at pseudo-version pin.
+  2. ✅ Core `v0.7.0` tagged (annotated tag object `c4a4dc1` → commit
+     `3729add`), pushed; GitHub Release Latest. Verified resolvable via
+     proxy (`go list -m go-ddd-core@v0.7.0` → `3729add`).
+  3. ⏳ Adapter dep-bump on branch `chore/bump-core-v0.7.0`: core pin
+     pseudo-version `v0.6.1-0.20260605060735-47e02fa632a8` → `v0.7.0` on
+     root + `examples/orders` go.mod (+ `go mod tidy`); no adapter code
+     change. Local verification green at the bumped tip: root
+     build/vet/test, -race auth/casbin, integration real-casbin,
+     examples/orders build/vet/test; golangci-lint v2
+     (`/usr/local/bin/golangci-lint`) default + `--build-tags=integration`
+     both 0 issues. Bookkeeping (CHANGELOG `[Unreleased]` → `[v0.7.0]`,
+     README status + compat matrix) rides in this PR. Awaiting PR + CI.
+  4. ⏳ After CI green at the bumped tip + merge → annotate + push adapter
+     `v0.7.0` tag and open the GitHub Latest Release.
 
 ## Current Branch
 
