@@ -12,6 +12,12 @@ github.com/ThreeDotsLabs/watermill v1.5.1 h1:t5xMivyf9tpmU3iozPqyrCZXHvoV1XQDfih
 github.com/ThreeDotsLabs/watermill v1.5.1/go.mod h1:Uop10dA3VeJWsSvis9qO3vbVY892LARrKAdki6WtXS4=
 github.com/ThreeDotsLabs/watermill-kafka/v3 v3.1.2 h1:lLmrzZnl8o8U5uLVhMLSFHGSuWLcsqhW1MOtltx2CbQ=
 github.com/ThreeDotsLabs/watermill-kafka/v3 v3.1.2/go.mod h1:o1GcoF/1CSJ9JSmQzUkULvpZeO635pZe+WWrYNFlJNk=
+github.com/bmatcuk/doublestar/v4 v4.6.1 h1:FH9SifrbvJhnlQpztAx++wlkk70QBf0iBWDwNy7PA4I=
+github.com/bmatcuk/doublestar/v4 v4.6.1/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
+github.com/casbin/casbin/v3 v3.10.0 h1:039ORla55vCeIZWd0LfzWFt1yiEA5X4W41xBW2bQuHs=
+github.com/casbin/casbin/v3 v3.10.0/go.mod h1:5rJbQr2e6AuuDDNxnPc5lQlC9nIgg6nS1zYwKXhpHC8=
+github.com/casbin/govaluate v1.3.0 h1:VA0eSY0M2lA86dYd5kPPuNZMUD9QkWnOCnavGrw9myc=
+github.com/casbin/govaluate v1.3.0/go.mod h1:G/UnbIjZk/0uMNaLwZZmFQrR72tYRZWQkO70si/iR7A=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
@@ -178,8 +184,8 @@ github.com/shirou/gopsutil/v4 v4.26.3 h1:2ESdQt90yU3oXF/CdOlRCJxrP+Am1aBYubTMTfx
 github.com/shirou/gopsutil/v4 v4.26.3/go.mod h1:LZ6ewCSkBqUpvSOf+LsTGnRinC6iaNUNMGBtDkJBaLQ=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
-github.com/slam0504/go-ddd-core v0.6.0 h1:AUA7qIspykhFAg4p6+Sk300cNnJRpJvEivv8iZxJk3Q=
-github.com/slam0504/go-ddd-core v0.6.0/go.mod h1:d7DeRRWLgY4hPwMRnSfPCTcVj3sYkX8SbtdnhK0GMfU=
+github.com/slam0504/go-ddd-core v0.6.1-0.20260605060735-47e02fa632a8 h1:8wQma5/KZc8rUiAyQb4TB/YLykmmUjV7izSVHYUcmIU=
+github.com/slam0504/go-ddd-core v0.6.1-0.20260605060735-47e02fa632a8/go.mod h1:d7DeRRWLgY4hPwMRnSfPCTcVj3sYkX8SbtdnhK0GMfU=
 github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 h1:+jumHNA0Wrelhe64i8F6HNlS8pkoyMv5sreGx2Ry5Rw=
 github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8/go.mod h1:3n1Cwaq1E1/1lhQhtRK2ts/ZwZEhjcQeJQ1RuC6Q/8U=
 github.com/spf13/afero v1.15.0 h1:b/YBCLWAJdFWJTN9cLhiXXcD7mzKn9Dm86dNnfyQw1I=
