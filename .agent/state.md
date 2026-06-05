@@ -84,10 +84,12 @@ HEAD `47e02fa`, not yet tagged). Phase A only.
   pin `v0.6.0` → pseudo-version of `47e02fa` on root + `examples/orders`.
 - OUT of scope this cycle: HTTP enforcement middleware (Phase B) and
   `examples/orders` AuthZ wiring (Phase C).
-- Status: Phase A implemented + locally verified (root build/vet/test,
+- Status: Phase A MERGED to `main` via PR #25 (merge commit `9a715e1`,
+  2026-06-05), CI 5/5 green. Locally verified: root build/vet/test,
   -race auth/casbin, integration real-casbin, examples/orders all green;
-  lint via CI). Pending: PR + merge, then the v0.7.0 cross-repo tag-gate
-  (out of scope of this PR — see the spec §10).
+  golangci-lint v2 (`/usr/local/bin/golangci-lint`) clean (0 issues on
+  `./...`). Pending: the v0.7.0 cross-repo tag-gate (out of scope of this
+  PR — see the spec §10).
 
 ## Current Branch
 
