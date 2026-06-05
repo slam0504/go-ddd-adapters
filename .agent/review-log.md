@@ -107,9 +107,15 @@ Last verified: 2026-05-20 Asia/Taipei (post PR #14 merge at `2e9e96d`)
   `goimports -local github.com/slam0504/go-ddd-adapters -l` before
   re-push (CI then 5/5 green). This is the same `local-prefixes`
   grouping class that bit the v0.4.0 cycle (`7e2a096`); `gofmt`
-  alone does not catch it and local `golangci-lint` rejects this
-  repo's `version: "2"` config, so the goimports check is the
-  reliable pre-push guard.
+  alone does not catch it. Correction to an earlier note in this
+  bullet's first draft: local golangci-lint DOES run — the
+  Homebrew v2.12.2 binary at `/usr/local/bin/golangci-lint` reads
+  the `version: "2"` config and reports 0 issues on `./...`; the
+  failure seen earlier was a stale v1.64.8 at `~/go/bin` (first on
+  the agent's PATH) that can't parse a v2 config. Reliable pre-push
+  guard: run the v2 binary (`golangci-lint run ./...`) or the
+  standalone `goimports -local github.com/slam0504/go-ddd-adapters
+  -l`.
 
 ## Current Open Review Items
 

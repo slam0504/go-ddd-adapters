@@ -807,6 +807,12 @@ remaining gate step. Same two-step finish as v0.5.0.
 Local verification at the implementation tip (2026-06-05): root
 `go build/vet ./...`, `go test ./...`, `go test -race ./auth/casbin/...`,
 `go test -tags=integration ./auth/casbin/...`, plus `examples/orders`
-build/vet/test all green. golangci-lint deferred to CI (local binary
-`v1.64.8` rejects this repo's `version: "2"` config — same defer-to-CI
-practice as prior cycles).
+build/vet/test all green. golangci-lint also run locally and clean
+(0 issues on `./...` and `./auth/casbin/...`) via the Homebrew v2.12.2
+binary at `/usr/local/bin/golangci-lint`. Correction to the first draft
+of this note: the earlier "defer to CI because local lint rejects the
+v2 config" was a binary-resolution mistake — the `v1.64.8` at `~/go/bin`
+(first on the agent's PATH) can't parse a `version: "2"` config, but the
+v2 binary reads it fine. CI's `golangci-lint (.)` still independently
+caught a goimports `local-prefixes` grouping miss in the test files
+(fixed `a7ca011`); see review-log.
