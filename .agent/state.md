@@ -67,10 +67,11 @@ Downstream services can now pin via
   `[v0.6.0]`. Cross-repo `.agent-memory/go-ddd.md` synced.
   Plan at `/Users/eason_tseng/.claude/plans/go-ddd-core-linear-finch.md`.
 
-## v0.7.0 AuthZ cycle (IN FLIGHT — kickoff 2026-06-05)
+## v0.7.0 AuthZ cycle (CLOSED — shipped 2026-06-05)
 
-First consumer of core's `ports/auth.Authorizer` contract (core `main`
-HEAD `47e02fa`, not yet tagged). Phase A only.
+First consumer of core's `ports/auth.Authorizer` contract. Phase A only.
+Released as adapter `v0.7.0` (annotated tag object `e304ec7` → merge
+commit `a03cc12`), GitHub Release marked Latest.
 
 - Branch: `feat/authz-casbin-v0.7.0` (off `main`).
 - Spec: `docs/superpowers/specs/2026-06-05-authz-casbin-adapter-design.md`.
@@ -91,17 +92,15 @@ HEAD `47e02fa`, not yet tagged). Phase A only.
   2. ✅ Core `v0.7.0` tagged (annotated tag object `c4a4dc1` → commit
      `3729add`), pushed; GitHub Release Latest. Verified resolvable via
      proxy (`go list -m go-ddd-core@v0.7.0` → `3729add`).
-  3. ⏳ Adapter dep-bump on branch `chore/bump-core-v0.7.0`: core pin
+  3. ✅ Adapter dep-bump PR #26 (`chore/bump-core-v0.7.0`) merged (merge
+     commit `a03cc12`, CI 5/5 green at the bumped tip): core pin
      pseudo-version `v0.6.1-0.20260605060735-47e02fa632a8` → `v0.7.0` on
      root + `examples/orders` go.mod (+ `go mod tidy`); no adapter code
-     change. Local verification green at the bumped tip: root
-     build/vet/test, -race auth/casbin, integration real-casbin,
-     examples/orders build/vet/test; golangci-lint v2
-     (`/usr/local/bin/golangci-lint`) default + `--build-tags=integration`
-     both 0 issues. Bookkeeping (CHANGELOG `[Unreleased]` → `[v0.7.0]`,
-     README status + compat matrix) rides in this PR. Awaiting PR + CI.
-  4. ⏳ After CI green at the bumped tip + merge → annotate + push adapter
-     `v0.7.0` tag and open the GitHub Latest Release.
+     change. Bookkeeping (CHANGELOG `[Unreleased]` → `[v0.7.0]`, README
+     status + compat matrix) rode in this PR.
+  4. ✅ Adapter `v0.7.0` annotated (tag object `e304ec7` → `a03cc12`),
+     pushed origin; GitHub Release marked Latest
+     (`releases/latest` → `v0.7.0`).
 
 ## Current Branch
 

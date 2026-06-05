@@ -816,3 +816,15 @@ v2 config" was a binary-resolution mistake — the `v1.64.8` at `~/go/bin`
 v2 binary reads it fine. CI's `golangci-lint (.)` still independently
 caught a goimports `local-prefixes` grouping miss in the test files
 (fixed `a7ca011`); see review-log.
+
+- **Tag at the last piece of the cycle, not the first.** Adapter
+  `v0.7.0` was annotated at the dep-bump merge (`a03cc12`, PR #26), NOT
+  at the impl merge (`9a715e1`, PR #25). Reason: only after the bump
+  does the tagged tree pin core at the released `v0.7.0` rather than a
+  pseudo-version, so `go get go-ddd-adapters@v0.7.0` can never drag in
+  an unpublished core snapshot. Mirrors the v0.6.0 precedent
+  (tag at dep-bump merge `1b0f3ae`, not impl merge `ae76f78`).
+- **Tag-gate CLOSED (2026-06-05):** all 4 spec §10 steps done — impl PR
+  #25 merged, core `v0.7.0` tagged, adapter dep-bump PR #26 merged CI
+  5/5, adapter `v0.7.0` annotated (tag object `e304ec7` → `a03cc12`) +
+  pushed + GitHub Release Latest (`releases/latest` → `v0.7.0`).
