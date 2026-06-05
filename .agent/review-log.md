@@ -97,7 +97,19 @@ Last verified: 2026-05-20 Asia/Taipei (post PR #14 merge at `2e9e96d`)
   godoc (commit `b7d1cad`) with `WithRequestBuilder` as the escape
   hatch. Implementation verified: root build/vet/test, `-race` on
   auth/casbin, integration (real casbin), `examples/orders`
-  build/vet/test all green; golangci-lint via CI.
+  build/vet/test all green; golangci-lint via CI. CI's
+  `golangci-lint (.)` then caught a real goimports finding
+  (`authorizer_test.go:12:1: File is not properly formatted`): the
+  local `casbinauth` import sat in the third-party group instead of
+  its own trailing `local-prefixes` group. Same regroup applied to
+  both `authorizer_test.go` and the `//go:build integration`
+  `integration_test.go`; fixed by `a7ca011`, verified with
+  `goimports -local github.com/slam0504/go-ddd-adapters -l` before
+  re-push (CI then 5/5 green). This is the same `local-prefixes`
+  grouping class that bit the v0.4.0 cycle (`7e2a096`); `gofmt`
+  alone does not catch it and local `golangci-lint` rejects this
+  repo's `version: "2"` config, so the goimports check is the
+  reliable pre-push guard.
 
 ## Current Open Review Items
 
