@@ -13,6 +13,50 @@ https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.5.0.
 this commit lands (`?? .agent/context-checkpoint.log`,
 `?? .agent/session-checkpoint.md`, `?? .serena/`).
 
+## v0.6.0 AuthN cycle (IN PROGRESS — Phase A, local-only)
+
+Updated: 2026-06-05 Asia/Taipei. Branch `feat/auth-jwt-verifier-v0.6.0`
+off `main` `45274dd`. **Not committed / pushed / PR'd** — by user
+instruction this turn stops at a reviewable dirty working tree.
+
+- **Phase A (`auth/jwt`) implementation + tests DONE locally.** New
+  package `authjwt` under `auth/jwt/`: `verifier.go`, `options.go`,
+  `doc.go`, `export_test.go` (test-only `SetNow` clock seam), and
+  `verifier_test.go` (external pkg `authjwt_test`, table-driven, fixed
+  reference clock). Implements core `auth.TokenVerifier` against one
+  static key family per `Verifier` (HMAC/RSA/ECDSA), algorithm-locked
+  via `jwt.WithValidMethods`, secure-by-default (`exp` required, RFC
+  7518 §3.2 HMAC length, RSA >= 2048 + odd exp >= 3, ECDSA on-curve via
+  `ECDH()`), all key/alg/gate validation centralized in `New`.
+- **Local verification green:** `go build ./...`, `go vet ./auth/...`,
+  `go test ./auth/...`, `go test -race ./auth/...`, `gofmt -l` clean.
+  One intentional `//nolint:staticcheck` on the ECDSA key-immutability
+  test (touches Go 1.25-deprecated `ecdsa.PublicKey.X` to prove the
+  Verifier deep-copied). Lint is CI-validated; local golangci-lint
+  (v2.x / older Go) cannot reliably target the go1.25 module.
+- **Deps:** core pin bumped to pseudo-version
+  `v0.5.1-0.20260604084748-aec4e2c9bef6` (contains `ports/auth`, ahead
+  of core's still-untagged `v0.6.0`); added
+  `github.com/golang-jwt/jwt/v5 v5.3.1`. `go.mod` + `go.sum` modified.
+- **Bookkeeping done this turn:** README Status / compat matrix /
+  adapter table (added `transport/http/stdlib`, `.../health`,
+  `auth/jwt` rows + corrected the stale "v0.4.0 is latest" lead);
+  CHANGELOG `[Unreleased] ### Added` authjwt entry; `.agent/decisions.md`
+  v0.6.0 cycle entry; this section.
+- **FLAGGED doc debt (pre-existing, NOT fixed this turn):** CHANGELOG
+  `[Unreleased]` still carries the core `v0.3.0 -> v0.4.0` bump +
+  `examples/orders` content that semantically shipped under the
+  `v0.5.0` tag, and there is **no `[v0.5.0]` release section**. The
+  v0.5.0 cycle did not fold its `[Unreleased]` into a release section.
+  Needs a separate cleanup decision; left untouched to keep this change
+  surgical.
+- **Pending:** Phase B (`transport/http/stdlib/authmw` bearer
+  middleware + options + doc + tests + integration test), then the
+  cross-repo tag-gate (same shape as v0.5.0): adapters ship Phase A +
+  Phase B PRs -> core tags `v0.6.0` -> adapters dep-bump PR to `v0.6.0`
+  -> adapters tag. Plan at
+  `/Users/eason_tseng/.claude/plans/go-ddd-core-linear-finch.md`.
+
 ## Current Branch
 
 - working tree: on `main` (this bookkeeping commit). `.serena/`,

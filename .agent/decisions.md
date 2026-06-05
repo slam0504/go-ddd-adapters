@@ -659,3 +659,115 @@ Verification at the implementation tip (`c528261`, 2026-05-25):
   `transport/http/stdlib/integration` exercises the bootstrap.App
   lifecycle with two `httpstdlib.New` servers (main + admin) and
   the toggleable Check; no Docker / testcontainers in this cycle.
+
+## v0.6.0 AuthN — `auth/jwt` static-key verifier (2026-06-05 cycle, Phase A)
+
+First consumer of core's untagged v0.6.0 `ports/auth` contract
+(`Identity` / `TokenVerifier` / `ErrTokenMissing|Invalid|Expired`).
+Decisions locked across a 13-round plan review; implementation tip
+is branch `feat/auth-jwt-verifier-v0.6.0` (local-only — not yet
+committed/pushed/PR'd when this entry was written). Plan file:
+`~/.claude/plans/go-ddd-core-linear-finch.md`.
+
+- **Library = `github.com/golang-jwt/jwt/v5` (v5.3.1)**. Chosen for
+  minimal dependency footprint (root + jwt only) and production-ready
+  positioning. Rejected `coreos/go-oidc` (semantics are OIDC ID-Token
+  verification, wrong shape for a general bearer verifier) and
+  `lestrrat-go/jwx` (heavier deps; mainline v4 wants Go 1.26 +
+  `GOEXPERIMENT=jsonv2`, misaligned with our Go 1.25 floor).
+- **Static keys only this cycle; JWKS deferred.** roadmap says
+  "static keys **or** JWKS" — we ship the static half. No background
+  key refresh / rotation, no `Authorizer` (AuthZ), no issuer/session.
+- **Package name `authjwt`** (path `auth/jwt`) to avoid colliding
+  with golang-jwt's own `jwt` package, mirroring the repo's
+  `pgxoutbox`/`pgxdb` convention.
+- **One key family per Verifier** — exactly one of
+  `WithHMACSecret` / `WithRSAPublicKey` / `WithECDSAPublicKey`. Zero
+  or >1 → `New` error. No alg-based multi-key selection (compose
+  multiple Verifiers if you need it).
+- **Family default + `WithAllowedAlgorithms` narrowing.** Without the
+  option, the accepted set is what the key type can *technically*
+  verify (HMAC=HS256/384/512, RSA=RS256/384/512, ECDSA=one ES per
+  curve). This is a **convenience default, flagged in doc.go as NOT
+  the best security posture**; README/examples always pin a single
+  alg. The option **intersects** with the family set and **never
+  crosses families** — `WithAllowedAlgorithms("HS256")` on an RSA key
+  → `New` error (alg-confusion killed at construction, not "verify as
+  HMAC"). Fed to `jwt.WithValidMethods([...])`, which is enforced
+  before keyfunc runs, so `alg:none` and cross-family confusion are
+  rejected pre-signature-check.
+- **`exp` mandatory (secure-by-default).** golang-jwt v5 does NOT
+  require `exp` by default — a token without it would be a permanent
+  credential. We always pass `jwt.WithExpirationRequired()`; missing
+  `exp` → `ErrTokenInvalid` (not Expired — the token is non-conformant,
+  not stale). No opt-out option this cycle.
+- **All validation in `New` → option order is irrelevant.** Options
+  are pure setters into `config`; every cross-field check (key-family
+  count, alg ∩ family, structural checks) runs after all options
+  apply. `New(WithAllowedAlgorithms("RS256"), WithRSAPublicKey(k))`
+  ≡ reversed order.
+- **Key set exactly once — fail, not last-wins.** Any key option
+  called >1 times (same family twice, or mixed families) → `New`
+  error. Silent key overwrite is a security risk and almost always a
+  config mistake.
+- **HMAC secret floor = RFC 7518 §3.2**, checked in `New`: secret
+  MUST be ≥ the hash output of the largest accepted HMAC alg. Family
+  default (HS256/384/512) → ≥64 bytes; `WithAllowedAlgorithms("HS256")`
+  → ≥32; `("HS256","HS384")` → ≥48. Too-short secret is a deploy-time
+  misconfig → fails at `New`, not `Verify`.
+- **RSA structural checks in `New`**: `N != nil && N.Sign() > 0`;
+  **`N.BitLen() >= 2048`** (NIST SP 800-57 — stricter than Go
+  crypto/rsa's 1024 floor); **exponent odd and ≥3**. Deep-copied via
+  `&rsa.PublicKey{N: new(big.Int).Set(k.N), E: k.E}`.
+- **ECDSA structural checks in `New`**: curve must be P-256/384/521
+  (→ ES256/384/512, uniquely determining the allowed alg); on-curve
+  validity via `(*ecdsa.PublicKey).ECDH()` (the non-deprecated
+  equivalent of `elliptic.IsOnCurve`, rejects nil coords / off-curve /
+  point-at-infinity). **Deep-copied via x509 `MarshalPKIXPublicKey` →
+  `ParsePKIXPublicKey` round-trip** — chosen specifically because Go
+  1.25 deprecates the `ecdsa.PublicKey.X`/`.Y` fields (SA1019 under
+  golangci-lint staticcheck), so the obvious `new(big.Int).Set(k.X)`
+  clone would fail CI lint.
+- **Security-gate vs extraction-name empty-option split.**
+  Security-gate options provided-but-empty → `New` error
+  (`WithIssuer("")`, `WithAudience("")`, empty/blank/zero-arg
+  `WithAllowedAlgorithms`) — silently disabling a check is unsafe.
+  Extraction-name options empty → silently keep default
+  (`WithTenantClaim("")` → tenant stays off; `WithRolesClaim("")` →
+  stays `"roles"`), following the repo's existing nil/empty-ignore
+  convention. "Not called at all" is the normal way to express "don't
+  validate this" and is distinct from "set but empty".
+- **`Verify` check order: empty token BEFORE ctx.** `token == ""` →
+  `ErrTokenMissing` first (holds core's contract even on a cancelled
+  ctx). Then `ctx.Err()` → returns the **raw** `context.Canceled` /
+  `DeadlineExceeded`, NOT wrapped in an auth sentinel (cancellation is
+  not a token problem).
+- **nbf-not-yet-valid → `ErrTokenInvalid`, NOT Expired.** Semantically
+  opposite to expiry (retry will eventually succeed). Core has only
+  Missing/Invalid/Expired; mapping not-yet-valid to Invalid is the
+  honest choice among those three. No new core sentinel this cycle.
+- **`sub` strict**: missing / empty / non-string → `ErrTokenInvalid`
+  (a verified principal needs a stable string id). `roles` lenient:
+  `[]any` keeps string elements in order (skips non-strings), single
+  string → one-element slice, anything else → nil. `TenantID` lenient:
+  off by default; non-string/empty/missing → `""`.
+- **`Identity.Claims` = raw `MapClaims` verbatim** (no normalization —
+  that would lose info). core's `Identity.clone()` shallow-copies the
+  top-level map only; nested values are read-only by core's own
+  contract. Claims are re-parsed per `Verify`, never shared across
+  requests, so no cross-request contamination — authjwt adds no extra
+  deep-copy. doc.go documents the read-only nested contract.
+- **Deterministic time tests** via an unexported `now func() time.Time`
+  (default `time.Now`) wired through `jwt.WithTimeFunc`; tests inject a
+  fixed clock through `auth/jwt/export_test.go` `SetNow`. The seam is
+  test-only, not public API. Concurrency safety (core contract)
+  verified with `-race`: N goroutines on one Verifier, mixed
+  valid/expired/bad-signature tokens, each result correct, no data race.
+
+Local verification at the implementation tip (2026-06-05, dirty tree):
+`go build/vet ./...`, `go test ./auth/...`, `go test -race ./auth/...`
+all green; one intentional `//nolint:staticcheck` for the off-curve
+construction + key-immutability mutation tests that must read the
+deprecated ECDSA coordinate fields. golangci-lint deferred to CI.
+Phase B (`transport/http/stdlib/authmw` middleware) and the cross-repo
+tag-gate are not started.
