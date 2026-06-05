@@ -85,6 +85,19 @@ Last verified: 2026-05-20 Asia/Taipei (post PR #14 merge at `2e9e96d`)
 
   CI 5/5 green first try at merge tip including the first ever pgx
   testcontainers run against real Postgres (1m10s).
+- v0.7.0 `auth/casbin` (Phase A, `feat/authz-casbin-v0.7.0`): spec/plan
+  reviewed and approved after two refinements — (1) typed-nil guard
+  mechanism made explicit (concrete type switch on `*casbin.Enforcer` /
+  `*casbin.SyncedEnforcer`, no generic reflect); (2) race-test claim
+  narrowed to concurrent read-only `Allow` (reload safety delegated to
+  Casbin, not asserted by the adapter). Two added review notes folded
+  in-band during execution: Task 1's casbin `// indirect` line resolved
+  by running `go mod tidy` after the first import lands in Task 2; the
+  `defaultRequestBuilder` `Type:ID` colon-collision risk documented in
+  godoc (commit `b7d1cad`) with `WithRequestBuilder` as the escape
+  hatch. Implementation verified: root build/vet/test, `-race` on
+  auth/casbin, integration (real casbin), `examples/orders`
+  build/vet/test all green; golangci-lint via CI.
 
 ## Current Open Review Items
 

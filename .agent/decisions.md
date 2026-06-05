@@ -779,3 +779,34 @@ step 4 (`chore/bump-core-v0.6.0`) swaps the core pin pseudo-version
 `v0.5.1-0.20260604084748-aec4e2c9bef6` → `v0.6.0` on root +
 `examples/orders`; step 5 (adapter `v0.6.0` tag + Release) is the only
 remaining gate step. Same two-step finish as v0.5.0.
+
+## v0.7.0 auth/casbin AuthZ adapter (2026-06-05 cycle)
+
+- **Engine: Casbin v3.10.0.** ~4 transitive modules vs OPA/Rego's ~126;
+  passes the repo's low-dependency bar. OPA deferred to a future
+  `auth/opa` package; the `auth/casbin` driver-named path leaves room.
+- **Depend on a one-method `Enforcer` interface, not concrete
+  `*casbin.Enforcer`.** Keeps the concurrency choice with the caller
+  (core "safe for concurrent use" is conditional on the supplied
+  enforcer) and lets unit tests use a fake. Constructor imports the
+  concrete Casbin types in ONE place only — the typed-nil guard.
+- **Typed-nil guard via explicit type switch on `*casbin.Enforcer` /
+  `*casbin.SyncedEnforcer`; no generic reflect.** Covers exactly the
+  documented public types.
+- **`Option func(*config)` private-config pattern** (mirrors authjwt);
+  Authorizer is immutable after New.
+- **Error discipline:** only `Enforce → false` becomes `ErrForbidden`;
+  malformed input → `ErrInvalidAuthorizationRequest` before the ctx
+  check; engine/ctx/builder errors passed through verbatim (a failed
+  decision must not be masked as a 403).
+- **No shim around core.** The contract was sufficient as merged; no
+  adapter-side workaround was needed.
+- **Phase A only.** HTTP enforcement middleware (Phase B) and
+  `examples/orders` wiring (Phase C) are separate cycles.
+
+Local verification at the implementation tip (2026-06-05): root
+`go build/vet ./...`, `go test ./...`, `go test -race ./auth/casbin/...`,
+`go test -tags=integration ./auth/casbin/...`, plus `examples/orders`
+build/vet/test all green. golangci-lint deferred to CI (local binary
+`v1.64.8` rejects this repo's `version: "2"` config — same defer-to-CI
+practice as prior cycles).

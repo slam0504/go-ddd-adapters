@@ -84,7 +84,10 @@ HEAD `47e02fa`, not yet tagged). Phase A only.
   pin `v0.6.0` → pseudo-version of `47e02fa` on root + `examples/orders`.
 - OUT of scope this cycle: HTTP enforcement middleware (Phase B) and
   `examples/orders` AuthZ wiring (Phase C).
-- Status: kickoff complete, spec approved, plan drafted.
+- Status: Phase A implemented + locally verified (root build/vet/test,
+  -race auth/casbin, integration real-casbin, examples/orders all green;
+  lint via CI). Pending: PR + merge, then the v0.7.0 cross-repo tag-gate
+  (out of scope of this PR — see the spec §10).
 
 ## Current Branch
 
