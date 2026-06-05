@@ -85,6 +85,37 @@ Last verified: 2026-05-20 Asia/Taipei (post PR #14 merge at `2e9e96d`)
 
   CI 5/5 green first try at merge tip including the first ever pgx
   testcontainers run against real Postgres (1m10s).
+- v0.7.0 `auth/casbin` (Phase A, `feat/authz-casbin-v0.7.0`): spec/plan
+  reviewed and approved after two refinements — (1) typed-nil guard
+  mechanism made explicit (concrete type switch on `*casbin.Enforcer` /
+  `*casbin.SyncedEnforcer`, no generic reflect); (2) race-test claim
+  narrowed to concurrent read-only `Allow` (reload safety delegated to
+  Casbin, not asserted by the adapter). Two added review notes folded
+  in-band during execution: Task 1's casbin `// indirect` line resolved
+  by running `go mod tidy` after the first import lands in Task 2; the
+  `defaultRequestBuilder` `Type:ID` colon-collision risk documented in
+  godoc (commit `b7d1cad`) with `WithRequestBuilder` as the escape
+  hatch. Implementation verified: root build/vet/test, `-race` on
+  auth/casbin, integration (real casbin), `examples/orders`
+  build/vet/test all green; golangci-lint via CI. CI's
+  `golangci-lint (.)` then caught a real goimports finding
+  (`authorizer_test.go:12:1: File is not properly formatted`): the
+  local `casbinauth` import sat in the third-party group instead of
+  its own trailing `local-prefixes` group. Same regroup applied to
+  both `authorizer_test.go` and the `//go:build integration`
+  `integration_test.go`; fixed by `a7ca011`, verified with
+  `goimports -local github.com/slam0504/go-ddd-adapters -l` before
+  re-push (CI then 5/5 green). This is the same `local-prefixes`
+  grouping class that bit the v0.4.0 cycle (`7e2a096`); `gofmt`
+  alone does not catch it. Correction to an earlier note in this
+  bullet's first draft: local golangci-lint DOES run — the
+  Homebrew v2.12.2 binary at `/usr/local/bin/golangci-lint` reads
+  the `version: "2"` config and reports 0 issues on `./...`; the
+  failure seen earlier was a stale v1.64.8 at `~/go/bin` (first on
+  the agent's PATH) that can't parse a v2 config. Reliable pre-push
+  guard: run the v2 binary (`golangci-lint run ./...`) or the
+  standalone `goimports -local github.com/slam0504/go-ddd-adapters
+  -l`.
 
 ## Current Open Review Items
 

@@ -56,12 +56,14 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 | `transport/http/stdlib/health` | `health.Check` | stdlib `net/http.ServeMux`; aggregates `ports/health.Check` probes into `/healthz` (liveness, always 200) + `/readyz` (readiness, 200/503) |
 | `auth/jwt` | `auth.TokenVerifier` | [golang-jwt v5][gjwt]; static keys (HMAC / RSA / ECDSA), algorithm-locked, secure-by-default (`exp` required, RFC 7518 §3.2 HMAC length, RSA >= 2048, ECDSA on-curve) |
 | `transport/http/stdlib/authmw` | `auth.TokenVerifier` (consumed) | stdlib `net/http` bearer middleware; strict single-header extraction (case-insensitive scheme, no trimming, whitespace rejected), stores verified `auth.Identity` in the request context, sanitizes failures (401 sentinels kept, uncoded -> fixed 500) + RFC 6750 `WWW-Authenticate` |
+| `auth/casbin` | `auth.Authorizer` | [Casbin v3][casbin]; wraps a caller-built enforcer behind a one-method `Enforcer` interface (`*casbin.Enforcer` / `*casbin.SyncedEnforcer`), default `(sub, obj, act)` request builder with `Type:ID` object encoding, overridable via `WithRequestBuilder`; deny -> `ErrForbidden`, malformed -> `ErrInvalidAuthorizationRequest`, engine/ctx/builder errors passed through |
 | `logger/slogger` | `logger.Logger` | `log/slog` (stdlib) |
 | `observability/otel` | `observability.Provider` | OpenTelemetry SDK v1.32 |
 
 [wmk]: https://github.com/ThreeDotsLabs/watermill-kafka
 [pgx]: https://github.com/jackc/pgx
 [gjwt]: https://github.com/golang-jwt/jwt
+[casbin]: https://github.com/casbin/casbin
 
 ## Compatibility matrix
 

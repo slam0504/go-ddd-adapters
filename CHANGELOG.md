@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `auth/casbin` (`casbinauth`): an `Authorizer` adapter wrapping a
+  caller-built Casbin enforcer as `go-ddd-core` `ports/auth.Authorizer`.
+  Depends on a one-method `Enforcer` interface (both `*casbin.Enforcer`
+  and `*casbin.SyncedEnforcer` satisfy it); default `(sub, obj, act)`
+  request builder with `Type:ID` object encoding, overridable via
+  `WithRequestBuilder`. Deny → `ErrForbidden`, malformed input →
+  `ErrInvalidAuthorizationRequest`; engine/ctx/builder errors are passed
+  through un-disguised.
+
 ## [v0.6.0] - 2026-06-05
 
 The authentication (AuthN) adapter slice: a static-key JWT verifier and

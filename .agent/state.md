@@ -67,6 +67,28 @@ Downstream services can now pin via
   `[v0.6.0]`. Cross-repo `.agent-memory/go-ddd.md` synced.
   Plan at `/Users/eason_tseng/.claude/plans/go-ddd-core-linear-finch.md`.
 
+## v0.7.0 AuthZ cycle (IN FLIGHT — kickoff 2026-06-05)
+
+First consumer of core's `ports/auth.Authorizer` contract (core `main`
+HEAD `47e02fa`, not yet tagged). Phase A only.
+
+- Branch: `feat/authz-casbin-v0.7.0` (off `main`).
+- Spec: `docs/superpowers/specs/2026-06-05-authz-casbin-adapter-design.md`.
+- Plan: `docs/superpowers/plans/2026-06-05-authz-casbin-adapter.md`.
+- Scope: `auth/casbin` (`casbinauth`) adapter wrapping a caller-built
+  Casbin enforcer behind a one-method `Enforcer` interface; default
+  `(sub, obj, act)` builder with `Type:ID` object encoding; core auth
+  sentinel mapping (`ErrForbidden` / `ErrInvalidAuthorizationRequest`);
+  engine/ctx/builder errors passed through un-disguised.
+- Dependency: added `github.com/casbin/casbin/v3 v3.10.0`; bumped core
+  pin `v0.6.0` → pseudo-version of `47e02fa` on root + `examples/orders`.
+- OUT of scope this cycle: HTTP enforcement middleware (Phase B) and
+  `examples/orders` AuthZ wiring (Phase C).
+- Status: Phase A implemented + locally verified (root build/vet/test,
+  -race auth/casbin, integration real-casbin, examples/orders all green;
+  lint via CI). Pending: PR + merge, then the v0.7.0 cross-repo tag-gate
+  (out of scope of this PR — see the spec §10).
+
 ## Current Branch
 
 - working tree: on `main` (this bookkeeping commit). `.serena/`,
