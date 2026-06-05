@@ -118,7 +118,10 @@ func isZeroIdentity(id auth.Identity) bool {
 
 // defaultRequestBuilder produces the classic Casbin (sub, obj, act) triple. A
 // resource with a non-empty ID is encoded as "Type:ID"; a collection-level
-// resource (empty ID) uses just "Type".
+// resource (empty ID) uses just "Type". Type and ID are assumed to contain no
+// ":" (the core contract documents Type as a simple kind such as "order");
+// callers whose Type or ID may contain a colon should supply a custom
+// RequestBuilder via WithRequestBuilder to avoid an ambiguous object string.
 func defaultRequestBuilder(_ context.Context, caller auth.Identity, action string, resource auth.Resource) ([]any, error) {
 	obj := resource.Type
 	if resource.ID != "" {
