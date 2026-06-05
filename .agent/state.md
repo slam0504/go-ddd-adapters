@@ -13,12 +13,15 @@ https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.5.0.
 this commit lands (`?? .agent/context-checkpoint.log`,
 `?? .agent/session-checkpoint.md`, `?? .serena/`).
 
-## v0.6.0 AuthN cycle (RELEASE PREP — step 4 of 5: dep-bump + bookkeeping)
+## v0.6.0 AuthN cycle (CLOSED — shipped + tagged 2026-06-05)
 
-Updated: 2026-06-05 Asia/Taipei. Branch `chore/bump-core-v0.6.0` off
-`main` `3cdfff5`. Cross-repo tag-gate steps 1–3 done; this branch is
-step 4 (dep-bump + bookkeeping PR); step 5 (adapter tag + Release) is
-the only remaining step.
+Updated: 2026-06-05 Asia/Taipei. All five cross-repo tag-gate steps
+done. Adapter `v0.6.0` annotated tag (tag object `a9d4bfb`) at merge
+commit `1b0f3ae`, pushed; GitHub Release published as Latest (not
+draft / not prerelease) at
+https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.6.0.
+Downstream services can now pin via
+`go get github.com/slam0504/go-ddd-adapters@v0.6.0`.
 
 - **Phase A (`auth/jwt` / `authjwt`) + Phase B
   (`transport/http/stdlib/authmw`) both SHIPPED** via a single combined
@@ -43,22 +46,25 @@ the only remaining step.
   GitHub Release marked Latest, core `main` head `f51aa46`. The
   cross-repo tag-gate was satisfied by adapters PR #23 (`ae76f78`)
   shipping the first `ports/auth` consumer.
-- **This branch (`chore/bump-core-v0.6.0`, step 4):** bumped the core
-  pin pseudo-version `v0.5.1-0.20260604084748-aec4e2c9bef6` → `v0.6.0`
-  on both root and `examples/orders` go.mod (transitive MVS). Local
-  verification green: root `go build/vet ./...`, `go test ./...`,
-  `go test -race ./auth/... ./eventbus/outbox/...`,
+- **Step 4 — dep-bump + bookkeeping PR #24** (merge commit `1b0f3ae`
+  on `main`, CI 5/5 green, branch `chore/bump-core-v0.6.0` deleted):
+  bumped the core pin pseudo-version
+  `v0.5.1-0.20260604084748-aec4e2c9bef6` → `v0.6.0` on both root and
+  `examples/orders` go.mod (transitive MVS). No adapter code changes.
+  Local verification green before push: root `go build/vet ./...`,
+  `go test ./...`, `go test -race ./auth/... ./eventbus/outbox/...`,
   `go test -tags=integration ./transport/http/stdlib/integration/...`,
-  plus `examples/orders` build/vet/test. golangci-lint deferred to CI
-  (local binary go1.24 < module target 1.25.0).
-- **Bookkeeping done this turn:** CHANGELOG `[Unreleased]` → `[v0.6.0]
-  - 2026-06-05` + narrative + v0.6.0 compare link; README Status (v0.6.0
-  now latest, authmw described) + adapter table (`authmw` row) + compat
-  matrix (`v0.6.0` released); `.agent/decisions.md` tag-gate-satisfied
-  marker; this section.
-- **Pending (step 5):** after this release-prep PR merges green, cut the
-  adapter `v0.6.0` annotated tag + GitHub Release (Latest) from the
-  CHANGELOG `[v0.6.0]` section, then a record-shipped `state.md` update.
+  plus `examples/orders` build/vet/test. golangci-lint via CI (local
+  binary go1.24 < module target 1.25.0). Bookkeeping rode in PR #24:
+  CHANGELOG `[Unreleased]` → `[v0.6.0] - 2026-06-05` + narrative +
+  v0.6.0 compare link; README Status (v0.6.0 now latest, authmw
+  described) + adapter table (`authmw` row) + compat matrix (`v0.6.0`
+  released); `.agent/decisions.md` tag-gate-satisfied marker.
+- **Step 5 — adapter tag + Release DONE:** annotated `v0.6.0` (tag
+  object `a9d4bfb`) cut at `1b0f3ae`, pushed to origin; GitHub Release
+  published as Latest (verified not draft / not prerelease;
+  `releases/latest` API returns `v0.6.0`), notes from CHANGELOG
+  `[v0.6.0]`. Cross-repo `.agent-memory/go-ddd.md` synced.
   Plan at `/Users/eason_tseng/.claude/plans/go-ddd-core-linear-finch.md`.
 
 ## Current Branch
