@@ -9,8 +9,9 @@ import (
 
 	"github.com/casbin/casbin/v3"
 	"github.com/casbin/casbin/v3/model"
-	casbinauth "github.com/slam0504/go-ddd-adapters/auth/casbin"
 	"github.com/slam0504/go-ddd-core/ports/auth"
+
+	casbinauth "github.com/slam0504/go-ddd-adapters/auth/casbin"
 )
 
 func TestIntegration_AllowDeny(t *testing.T) {
