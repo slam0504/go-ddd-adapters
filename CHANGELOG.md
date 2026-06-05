@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.0] - 2026-06-05
+
+The authorization (AuthZ) adapter slice: a Casbin-backed `Authorizer`
+implementing core's `ports/auth.Authorizer`. Bumps the core dependency
+to `v0.7.0`, which publishes the `Authorizer` contract. No breaking
+changes to the v0.6.0 surface; HTTP enforcement middleware and
+`examples/orders` AuthZ wiring are deferred to later cycles.
+
 ### Added
 
 - `auth/casbin` (`casbinauth`): an `Authorizer` adapter wrapping a
@@ -347,7 +355,8 @@ are new packages or new exported symbols.
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.7.0...HEAD
+[v0.7.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.3.0...v0.4.0

@@ -9,7 +9,18 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.6.0` is the latest tagged release — the authentication (AuthN)
+`v0.7.0` is the latest tagged release — the authorization (AuthZ)
+slice. The `auth/casbin` adapter implements core's `auth.Authorizer`
+by wrapping a caller-built Casbin enforcer behind a one-method
+`Enforcer` interface (both `*casbin.Enforcer` and
+`*casbin.SyncedEnforcer` satisfy it); the default request builder maps
+a call to the `(sub, obj, act)` tuple with `Type:ID` object encoding,
+overridable via `WithRequestBuilder`. Denied decisions map to
+`ErrForbidden`, malformed input to `ErrInvalidAuthorizationRequest`,
+and engine/context/builder errors pass through un-disguised. Requires
+`go-ddd-core v0.7.0` (`ports/auth.Authorizer`).
+
+`v0.6.0` adds the authentication (AuthN)
 slice. The `auth/jwt` adapter implements core's `auth.TokenVerifier`
 against static keys (HMAC secret / RSA / ECDSA public keys) using
 `golang-jwt/jwt v5`, with algorithm locking and secure-by-default
@@ -69,6 +80,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.7.0` | `v0.7.0` | `>= 1.25` |
 | `v0.6.0` | `v0.6.0` | `>= 1.25` |
 | `v0.5.0` | `v0.5.0` | `>= 1.25` |
 | `v0.4.0` | `v0.3.0` | `>= 1.25` |
