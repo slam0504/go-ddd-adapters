@@ -7,9 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### JWT verifier (`auth/jwt`)
+- New `auth/jwt` adapter (package `authjwt`) implementing core's
+  `auth.TokenVerifier` for signed JWTs against a single static key
+  family per `Verifier`, built on `golang-jwt/jwt v5`. Configure
+  exactly one of `WithHMACSecret` (HS256/384/512), `WithRSAPublicKey`
+  (RS256/384/512), or `WithECDSAPublicKey` (ES256/384/512 fixed by the
+  curve); zero, duplicate, or mixed key options fail at `New`.
+- Algorithm locking via `jwt.WithValidMethods`: the accepted set is the
+  key family's algorithms, optionally narrowed by `WithAllowedAlgorithms`
+  (intersected with the family, never widened, never cross-family), so
+  `alg:none` and RS256<->HS256 confusion are rejected at construction or
+  parse time. Production callers SHOULD pin the exact issuer algorithm.
+- Secure-by-default, enforced at `New` (deploy time) rather than
+  `Verify`: `exp` required (`jwt.WithExpirationRequired`), RFC 7518 §3.2
+  HMAC secret minimum length (>= the hash size of the largest accepted
+  HMAC algorithm), RSA modulus >= 2048 bits (NIST SP 800-57) with an odd
+  exponent >= 3, and an ECDSA on-curve check via `(*ecdsa.PublicKey).ECDH()`.
+- Claim mapping to `auth.Identity`: `Subject` <- `sub` (missing/empty/
+  non-string -> `ErrTokenInvalid`); `TenantID` <- `WithTenantClaim(name)`
+  (off by default); `Roles` <- `WithRolesClaim(name)` (default `roles`);
+  `Claims` exposes the raw claim map as-is. Optional `WithIssuer`,
+  `WithAudience`, and `WithLeeway` gates. Empty security-gate options
+  (`WithIssuer("")`, `WithAudience("")`, empty `WithAllowedAlgorithms`)
+  fail loud at `New`; empty extraction-name options keep their default.
+- Error mapping to core sentinels: empty token -> `ErrTokenMissing`;
+  expired `exp` -> `ErrTokenExpired`; everything else (malformed, bad
+  signature, disallowed algorithm, `nbf` not-yet-valid, missing `exp`/
+  `iss`/`aud`, invalid `sub`) -> `ErrTokenInvalid`. A cancelled context
+  returns the raw `ctx.Err()` (checked after the empty-token guard), and
+  401 surfaces never leak token or claim content.
+
+#### HTTP bearer middleware (`transport/http/stdlib/authmw`)
+- New `transport/http/stdlib/authmw` sub-package (package `authmw`):
+  net/http bearer-authentication middleware wiring a core
+  `auth.TokenVerifier` into the request pipeline.
+  `New(verifier, opts...) (Middleware, error)` returns a standard
+  `func(http.Handler) http.Handler` decorator applied to the handler
+  passed to `httpstdlib.New` (the Server is unchanged). It fails loud at
+  construction on a nil verifier — a literal-nil interface or a nil
+  `auth.TokenVerifierFunc` — via the `ErrNilVerifier` sentinel.
+- On success the verified `auth.Identity` is stored in the request
+  context (readable downstream via `auth.IdentityFromContext`) before
+  `next` runs; any extraction or verification failure is written by the
+  responder and `next` is not called.
+- Default extractor is strict: exactly one `Authorization: Bearer
+  <token>` header (multiple headers are ambiguous and rejected),
+  case-insensitive scheme, no trimming, any whitespace in the token
+  rejected. Overridable via `WithTokenExtractor`; an extractor returning
+  `("", nil)` is treated as a missing token and `Verify` is not called.
+- Default responder sanitizes failures: coded auth sentinels keep their
+  401 and clean message, while any uncoded error collapses to a fixed
+  500 `"internal error"` so a custom verifier cannot leak token or claim
+  content. On a 401 it sets the RFC 6750 `WWW-Authenticate` challenge
+  (bare `Bearer` for a missing token, `Bearer error="invalid_token"` for
+  invalid/expired); non-401 responses carry no challenge. Overridable
+  via `WithErrorResponder`. There is deliberately no logging option, to
+  avoid a surface that could record token or claim content.
+
+## [v0.5.0] - 2026-05-26
+
+The net/http transport adapter. Wraps Go's `net/http` server as a
+`bootstrap.Module` with a synchronous bind (port-in-use surfaces as a
+startup error) and timeout-bounded graceful shutdown, plus a health
+sub-package that aggregates `ports/health.Check` probes into
+Kubernetes-style liveness and readiness endpoints. No breaking changes
+to the v0.4.0 surface.
+
+### Added
+
+#### net/http transport (`transport/http/stdlib`)
+- New `transport/http/stdlib` adapter (package `httpstdlib`) wrapping
+  `net/http` as a `bootstrap.Module`. `New(addr, handler, opts...)`
+  returns a `*Server` whose `Module()` binds the listener synchronously
+  inside Start — a port-in-use surfaces as a startup error, not a
+  goroutine-only log line — and whose `Addr()` reports the resolved
+  address after Start (useful with an ephemeral `":0"` port). The
+  package-level `Module(addr, handler, opts...)` is a convenience
+  wrapper for when the resolved address is not needed.
+- `Stop` runs `server.Shutdown` under `WithShutdownTimeout` (default
+  15s), returning `context.DeadlineExceeded` if in-flight requests do
+  not drain in time. Options: `WithReadHeaderTimeout`,
+  `WithShutdownTimeout`, `WithLogger`, `WithModuleName` (distinguishes
+  multiple servers in lifecycle logs), and `WithBaseContext`.
+
+#### Health probes (`transport/http/stdlib/health`)
+- New `transport/http/stdlib/health` sub-package aggregating
+  `go-ddd-core` `ports/health.Check` probes into liveness / readiness
+  HTTP handlers. The zero-value `Registry` is ready to use;
+  `Register` / `MustRegister` are safe for concurrent startup calls.
+- `LivenessHandler` serves `/healthz` always 200 and runs no Check (a
+  failing dependency must not trigger a pod restart). `ReadinessHandler`
+  serves `/readyz`, running every Check sequentially in registration
+  order under `SetProbeTimeout` (default 2s each): 200 when all pass,
+  503 when any fails, with the body always listing every Check —
+  including passing ones on the 503 path — so operators see
+  partial-failure state. `Handler()` combines both on the exact paths
+  `/healthz` + `/readyz` via a method-aware mux (GET only; other methods
+  return 405); mount under a prefix with `http.StripPrefix`.
+
 ### Changed
 
-- Bumped `github.com/slam0504/go-ddd-core` from `v0.3.0` → `v0.4.0`
+- Bumped `github.com/slam0504/go-ddd-core` from `v0.3.0` → `v0.5.0`
   in both root and `examples/orders` modules. Core's v0.4.0 removed
   the in-process `eventbus/inbox/memory.go` Memory Inbox; the
   `Inbox` interface in core's parent `eventbus` package is
@@ -20,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   had not yet migrated their import path from
   `go-ddd-core/eventbus/inbox` to
   `go-ddd-adapters/eventbus/inbox` must do so before pinning
-  `go-ddd-core@v0.4.0` transitively through this version.
+  `go-ddd-core@v0.4.0`+ transitively through this version.
 - `examples/orders` upgraded to demo transactional outbox end-to-end.
   `cmd/api` and `cmd/worker` now share Postgres for the write model;
   aggregate `Save` and outbox `Stage` commit in one transaction.
@@ -43,6 +144,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curl flow previously decoded `price_cents` to 0 due to
   encoding/json case-insensitive matching not normalising
   underscores.
+- `examples/orders` enables optimistic locking in the pgx repository
+  and maps core's `ErrConcurrencyConflict` to HTTP 409 in `cmd/api`.
+  The in-memory repository intentionally does not enforce optimistic
+  locking; the gap is documented in `examples/orders/README.md`.
 
 ## [v0.4.0] - 2026-05-20
 
@@ -221,6 +326,7 @@ are new packages or new exported symbols.
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.2.0...v0.3.0
