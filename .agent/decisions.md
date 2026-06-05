@@ -769,5 +769,13 @@ Local verification at the implementation tip (2026-06-05, dirty tree):
 all green; one intentional `//nolint:staticcheck` for the off-curve
 construction + key-immutability mutation tests that must read the
 deprecated ECDSA coordinate fields. golangci-lint deferred to CI.
-Phase B (`transport/http/stdlib/authmw` middleware) and the cross-repo
-tag-gate are not started.
+
+v0.6.0 tag-gate satisfied + delivered (2026-06-05): Phase A
+(`auth/jwt`) and Phase B (`transport/http/stdlib/authmw`) shipped
+together as PR #23 (merge `ae76f78`), which is the first `ports/auth`
+consumer that unblocks core's tag. Core cut `v0.6.0` (tag object
+`fd596cd` on core merge `86b1e15`, GitHub Release Latest). Adapter
+step 4 (`chore/bump-core-v0.6.0`) swaps the core pin pseudo-version
+`v0.5.1-0.20260604084748-aec4e2c9bef6` → `v0.6.0` on root +
+`examples/orders`; step 5 (adapter `v0.6.0` tag + Release) is the only
+remaining gate step. Same two-step finish as v0.5.0.
