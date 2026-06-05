@@ -17,10 +17,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/slam0504/go-ddd-core/bootstrap"
+	"github.com/slam0504/go-ddd-core/ports/auth"
 	corehealth "github.com/slam0504/go-ddd-core/ports/health"
 
+	authjwt "github.com/slam0504/go-ddd-adapters/auth/jwt"
 	httpstdlib "github.com/slam0504/go-ddd-adapters/transport/http/stdlib"
+	"github.com/slam0504/go-ddd-adapters/transport/http/stdlib/authmw"
 	"github.com/slam0504/go-ddd-adapters/transport/http/stdlib/health"
 )
 
@@ -100,6 +104,108 @@ func TestEndToEnd_MainAndAdminServers(t *testing.T) {
 	mustStatus(t, adminBase+"/readyz", http.StatusOK)
 
 	// app.Stop is exercised via t.Cleanup; failure there fails the test.
+}
+
+// TestEndToEnd_ProtectedRoute_AuthJWT wires Phase A (authjwt static-key
+// verifier) and Phase B (authmw middleware) end-to-end through a real
+// httpstdlib server: a valid HS256 bearer token reaches the protected handler
+// and the verified Identity is readable from the request context; a request
+// with no token is rejected with 401 before the handler runs.
+func TestEndToEnd_ProtectedRoute_AuthJWT(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef") // 32 bytes, sufficient for HS256
+
+	verifier, err := authjwt.New(
+		authjwt.WithHMACSecret(secret),
+		authjwt.WithAllowedAlgorithms("HS256"),
+	)
+	if err != nil {
+		t.Fatalf("authjwt.New: %v", err)
+	}
+	protect, err := authmw.New(verifier)
+	if err != nil {
+		t.Fatalf("authmw.New: %v", err)
+	}
+
+	var handlerRan atomic.Bool
+	me := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handlerRan.Store(true)
+		id, ok := auth.IdentityFromContext(r.Context())
+		if !ok {
+			http.Error(w, "no identity", http.StatusInternalServerError)
+			return
+		}
+		_, _ = io.WriteString(w, id.Subject)
+	})
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /me", protect(me))
+
+	srv := httpstdlib.New("127.0.0.1:0", mux)
+	app := bootstrap.New(bootstrap.Options{})
+	app.Use(srv.Module())
+
+	startCtx, startCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer startCancel()
+	if err := app.Start(startCtx); err != nil {
+		t.Fatalf("app.Start: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stopCancel()
+		if err := app.Stop(stopCtx); err != nil {
+			t.Fatalf("app.Stop: %v", err)
+		}
+	})
+
+	base := "http://" + srv.Addr()
+
+	// Valid token → 200 and the handler reads the verified subject.
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": "alice",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	signed, err := token.SignedString(secret)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	status, body := getWithBearer(t, base+"/me", signed)
+	if status != http.StatusOK {
+		t.Fatalf("authenticated GET /me status = %d, want 200", status)
+	}
+	if body != "alice" {
+		t.Fatalf("protected handler subject = %q, want alice", body)
+	}
+
+	// No token → 401 and the protected handler never runs.
+	handlerRan.Store(false)
+	status, _ = getWithBearer(t, base+"/me", "")
+	if status != http.StatusUnauthorized {
+		t.Fatalf("anonymous GET /me status = %d, want 401", status)
+	}
+	if handlerRan.Load() {
+		t.Fatal("protected handler ran for an unauthenticated request")
+	}
+}
+
+func getWithBearer(t *testing.T, url, token string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("new request %s: %v", url, err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body %s: %v", url, err)
+	}
+	return resp.StatusCode, string(b)
 }
 
 var errToggleUnhealthy = &toggleErr{}
