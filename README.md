@@ -9,15 +9,29 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.4.0` is the latest tagged release and the production-shaped
-Outbox milestone. It adds `eventbus/outbox/pgx` (transactional
-Outbox + OutboxStore + DLQ backed by Postgres 12+ via pgx/v5) paired
-with `ports/database/pgx` (the `database.TxManager` adapter that lets
-`Stage` participate in the caller's database transaction). Closes all
-five limitations the in-process `Memory` outbox shipped with in
-v0.3.0; the `Memory` outbox remains available for tests and demos.
-`v0.4.0` bumps the Go floor from 1.24 to 1.25 (required by the pgx
-dependency tree).
+`v0.5.0` is the latest tagged release. It adds the HTTP transport
+adapter `transport/http/stdlib` — a `net/http` server wrapped as a
+`bootstrap.Module` (synchronous listen-bind so a port-in-use fails at
+`Start`, graceful `Shutdown` under a configurable timeout) — plus the
+`transport/http/stdlib/health` sub-package that aggregates
+`ports/health.Check` probes into `/healthz` (liveness) and `/readyz`
+(readiness) handlers.
+
+`main` is on the v0.6.0 AuthN cycle. The `auth/jwt` adapter implements
+core's `auth.TokenVerifier` against static keys (HMAC secret / RSA /
+ECDSA public keys) using `golang-jwt/jwt v5`, with algorithm locking
+and secure-by-default validation (`exp` required, RFC 7518 §3.2 HMAC
+secret length, RSA modulus >= 2048, ECDSA on-curve). The paired HTTP
+bearer middleware lands later in the same cycle.
+
+`v0.4.0` is the production-shaped Outbox milestone. It adds
+`eventbus/outbox/pgx` (transactional Outbox + OutboxStore + DLQ backed
+by Postgres 12+ via pgx/v5) paired with `ports/database/pgx` (the
+`database.TxManager` adapter that lets `Stage` participate in the
+caller's database transaction). Closes all five limitations the
+in-process `Memory` outbox shipped with in v0.3.0; the `Memory` outbox
+remains available for tests and demos. `v0.4.0` bumps the Go floor from
+1.24 to 1.25 (required by the pgx dependency tree).
 
 `v0.3.0` remains available on the v0.3.x line and aligns this repo
 with `go-ddd-core v0.3.0`. It brings the in-process `Memory` Inbox
@@ -33,17 +47,22 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 | `eventbus/outbox` | `eventbus.Outbox`, `eventbus.OutboxStore`, `eventbus.Relay` | in-process `Memory` + polling `Relay` — **non-transactional test/dev adapter, not for production** |
 | `eventbus/outbox/pgx` | `eventbus.Outbox`, `eventbus.OutboxStore`, `outbox.DeadLetterRecorder` | [pgx/v5][pgx] + Postgres 12+; lease-based claim with `FOR UPDATE SKIP LOCKED`, separate `outbox_dead_letters` table, safe for multiple Relay instances |
 | `ports/database/pgx` | `database.TxManager` | [pgx/v5][pgx] pool + ctx-bound transaction handle (`pgxdb.WithTx` / `pgxdb.TxFromContext` / `pgxdb.Executor`) |
+| `transport/http/stdlib` | `bootstrap.Module` | stdlib `net/http` server; synchronous listen-bind (port-in-use fails at `Start`), graceful `Shutdown` under a configurable timeout |
+| `transport/http/stdlib/health` | `health.Check` | stdlib `net/http.ServeMux`; aggregates `ports/health.Check` probes into `/healthz` (liveness, always 200) + `/readyz` (readiness, 200/503) |
+| `auth/jwt` | `auth.TokenVerifier` | [golang-jwt v5][gjwt]; static keys (HMAC / RSA / ECDSA), algorithm-locked, secure-by-default (`exp` required, RFC 7518 §3.2 HMAC length, RSA >= 2048, ECDSA on-curve) |
 | `logger/slogger` | `logger.Logger` | `log/slog` (stdlib) |
 | `observability/otel` | `observability.Provider` | OpenTelemetry SDK v1.32 |
 
 [wmk]: https://github.com/ThreeDotsLabs/watermill-kafka
 [pgx]: https://github.com/jackc/pgx
+[gjwt]: https://github.com/golang-jwt/jwt
 
 ## Compatibility matrix
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
-| `main` (post-`v0.4.0`) | `v0.3.x` | `>= 1.25` |
+| `main` (v0.6.0 dev) | `v0.6.0` pre-release (`ports/auth`) | `>= 1.25` |
+| `v0.5.0` | `v0.5.0` | `>= 1.25` |
 | `v0.4.0` | `v0.3.0` | `>= 1.25` |
 | `v0.3.0` | `v0.3.0` | `>= 1.24` |
 | `v0.2.x` | `v0.2.x` | `>= 1.24` |
