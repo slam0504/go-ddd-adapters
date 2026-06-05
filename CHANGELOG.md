@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-06-05
+
+The authentication (AuthN) adapter slice: a static-key JWT verifier and
+the paired net/http bearer middleware, both implementing core's
+`ports/auth` contract (`auth.TokenVerifier`, `auth.Identity`, and the
+three auth sentinels). Bumps the core dependency to `v0.6.0`, which
+publishes that contract. No breaking changes to the v0.5.0 surface;
+JWKS-backed keys and authorization (`Authorizer`) are deferred to a
+later cycle.
+
 ### Added
 
 #### JWT verifier (`auth/jwt`)
@@ -326,7 +336,8 @@ are new packages or new exported symbols.
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.6.0...HEAD
+[v0.6.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.2.0...v0.3.0

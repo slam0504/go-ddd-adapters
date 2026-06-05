@@ -1,6 +1,6 @@
 # go-ddd-adapters State
 
-Last verified: 2026-05-26 Asia/Taipei (on `main` after PR #22 merge and `v0.5.0` tag/release — bookkeeping pass only, no CI re-run)
+Last verified: 2026-06-05 Asia/Taipei (on `chore/bump-core-v0.6.0` off `main` `3cdfff5` — v0.6.0 release-prep: core pin → `v0.6.0`, local full suite green, lint deferred to CI)
 Source: `git log main --oneline -10` shows merge commit `45274dd`
 (`Merge pull request #22 from slam0504/chore/v0.5.0-tag-bookkeeping`).
 PR #22's CI was 5/5 green at merge tip (build+test root 1m12s +
@@ -13,49 +13,53 @@ https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.5.0.
 this commit lands (`?? .agent/context-checkpoint.log`,
 `?? .agent/session-checkpoint.md`, `?? .serena/`).
 
-## v0.6.0 AuthN cycle (IN PROGRESS — Phase A, local-only)
+## v0.6.0 AuthN cycle (RELEASE PREP — step 4 of 5: dep-bump + bookkeeping)
 
-Updated: 2026-06-05 Asia/Taipei. Branch `feat/auth-jwt-verifier-v0.6.0`
-off `main` `45274dd`. **Not committed / pushed / PR'd** — by user
-instruction this turn stops at a reviewable dirty working tree.
+Updated: 2026-06-05 Asia/Taipei. Branch `chore/bump-core-v0.6.0` off
+`main` `3cdfff5`. Cross-repo tag-gate steps 1–3 done; this branch is
+step 4 (dep-bump + bookkeeping PR); step 5 (adapter tag + Release) is
+the only remaining step.
 
-- **Phase A (`auth/jwt`) implementation + tests DONE locally.** New
-  package `authjwt` under `auth/jwt/`: `verifier.go`, `options.go`,
-  `doc.go`, `export_test.go` (test-only `SetNow` clock seam), and
-  `verifier_test.go` (external pkg `authjwt_test`, table-driven, fixed
-  reference clock). Implements core `auth.TokenVerifier` against one
-  static key family per `Verifier` (HMAC/RSA/ECDSA), algorithm-locked
-  via `jwt.WithValidMethods`, secure-by-default (`exp` required, RFC
-  7518 §3.2 HMAC length, RSA >= 2048 + odd exp >= 3, ECDSA on-curve via
-  `ECDH()`), all key/alg/gate validation centralized in `New`.
-- **Local verification green:** `go build ./...`, `go vet ./auth/...`,
-  `go test ./auth/...`, `go test -race ./auth/...`, `gofmt -l` clean.
-  One intentional `//nolint:staticcheck` on the ECDSA key-immutability
-  test (touches Go 1.25-deprecated `ecdsa.PublicKey.X` to prove the
-  Verifier deep-copied). Lint is CI-validated; local golangci-lint
-  (v2.x / older Go) cannot reliably target the go1.25 module.
-- **Deps:** core pin bumped to pseudo-version
-  `v0.5.1-0.20260604084748-aec4e2c9bef6` (contains `ports/auth`, ahead
-  of core's still-untagged `v0.6.0`); added
-  `github.com/golang-jwt/jwt/v5 v5.3.1`. `go.mod` + `go.sum` modified.
-- **Bookkeeping done this turn:** README Status / compat matrix /
-  adapter table (added `transport/http/stdlib`, `.../health`,
-  `auth/jwt` rows + corrected the stale "v0.4.0 is latest" lead);
-  CHANGELOG `[Unreleased] ### Added` authjwt entry; `.agent/decisions.md`
-  v0.6.0 cycle entry; this section.
-- **FLAGGED doc debt (pre-existing, NOT fixed this turn):** CHANGELOG
-  `[Unreleased]` still carries the core `v0.3.0 -> v0.4.0` bump +
-  `examples/orders` content that semantically shipped under the
-  `v0.5.0` tag, and there is **no `[v0.5.0]` release section**. The
-  v0.5.0 cycle did not fold its `[Unreleased]` into a release section.
-  Needs a separate cleanup decision; left untouched to keep this change
-  surgical.
-- **Pending:** Phase B (`transport/http/stdlib/authmw` bearer
-  middleware + options + doc + tests + integration test), then the
-  cross-repo tag-gate (same shape as v0.5.0): adapters ship Phase A +
-  Phase B PRs -> core tags `v0.6.0` -> adapters dep-bump PR to `v0.6.0`
-  -> adapters tag. Plan at
-  `/Users/eason_tseng/.claude/plans/go-ddd-core-linear-finch.md`.
+- **Phase A (`auth/jwt` / `authjwt`) + Phase B
+  (`transport/http/stdlib/authmw`) both SHIPPED** via a single combined
+  PR #23 (merge commit `ae76f78` on `main`). Branch
+  `feat/auth-jwt-verifier-v0.6.0` deleted (local + remote). `authjwt`
+  is the static-key JWT verifier (one key family per `Verifier`,
+  algorithm-locked via `jwt.WithValidMethods`, secure-by-default);
+  `authmw` is the net/http bearer middleware
+  (`New(verifier, opts...) (Middleware, error)`, two-layer nil guard →
+  `ErrNilVerifier`, strict single-header bearer extraction, sanitized
+  responder + RFC 6750 `WWW-Authenticate`). An integration test wires
+  authjwt + authmw end-to-end. CI green on PR #23 incl.
+  `golangci-lint (.)` / `(examples/orders)` + `integration
+  (testcontainers)`.
+- **CHANGELOG doc-debt RESOLVED** (commit `3cdfff5`, direct to `main`
+  by user choice): reconstructed the missing `[v0.5.0] - 2026-05-26`
+  release section, moved the misplaced core-bump / `examples/orders`
+  Changed blocks out of `[Unreleased]`, fixed compare links. The debt
+  previously flagged in this section is now cleared.
+- **Core `v0.6.0` TAGGED 2026-06-05** (core agent, separate repo):
+  annotated tag (tag object `fd596cd`) landing on core merge `86b1e15`,
+  GitHub Release marked Latest, core `main` head `f51aa46`. The
+  cross-repo tag-gate was satisfied by adapters PR #23 (`ae76f78`)
+  shipping the first `ports/auth` consumer.
+- **This branch (`chore/bump-core-v0.6.0`, step 4):** bumped the core
+  pin pseudo-version `v0.5.1-0.20260604084748-aec4e2c9bef6` → `v0.6.0`
+  on both root and `examples/orders` go.mod (transitive MVS). Local
+  verification green: root `go build/vet ./...`, `go test ./...`,
+  `go test -race ./auth/... ./eventbus/outbox/...`,
+  `go test -tags=integration ./transport/http/stdlib/integration/...`,
+  plus `examples/orders` build/vet/test. golangci-lint deferred to CI
+  (local binary go1.24 < module target 1.25.0).
+- **Bookkeeping done this turn:** CHANGELOG `[Unreleased]` → `[v0.6.0]
+  - 2026-06-05` + narrative + v0.6.0 compare link; README Status (v0.6.0
+  now latest, authmw described) + adapter table (`authmw` row) + compat
+  matrix (`v0.6.0` released); `.agent/decisions.md` tag-gate-satisfied
+  marker; this section.
+- **Pending (step 5):** after this release-prep PR merges green, cut the
+  adapter `v0.6.0` annotated tag + GitHub Release (Latest) from the
+  CHANGELOG `[v0.6.0]` section, then a record-shipped `state.md` update.
+  Plan at `/Users/eason_tseng/.claude/plans/go-ddd-core-linear-finch.md`.
 
 ## Current Branch
 
