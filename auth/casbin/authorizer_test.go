@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/casbin/casbin/v3"
+	"github.com/casbin/casbin/v3/model"
 	casbinauth "github.com/slam0504/go-ddd-adapters/auth/casbin"
 	"github.com/slam0504/go-ddd-core/ports/auth"
 )
@@ -90,8 +92,8 @@ func TestAllow_MalformedInput(t *testing.T) {
 		action   string
 		resource auth.Resource
 	}{
-		"zero identity":      {auth.Identity{}, "read", auth.Resource{Type: "order"}},
-		"empty action":       {validIdentity(), "", auth.Resource{Type: "order"}},
+		"zero identity":       {auth.Identity{}, "read", auth.Resource{Type: "order"}},
+		"empty action":        {validIdentity(), "", auth.Resource{Type: "order"}},
 		"empty resource type": {validIdentity(), "read", auth.Resource{Type: ""}},
 	}
 	for name, c := range cases {
@@ -207,4 +209,57 @@ func TestAllow_BuilderEmptyTuple(t *testing.T) {
 	if f.calls != 0 {
 		t.Fatalf("enforcer was called %d times; an empty tuple must short-circuit", f.calls)
 	}
+}
+
+// aclModel is the classic Casbin (sub, obj, act) ACL/RBAC request model used by
+// the concurrency and integration tests.
+const aclModel = `
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = r.sub == p.sub && r.obj == p.obj && r.act == p.act
+`
+
+func TestAllow_ConcurrentReadOnly(t *testing.T) {
+	m, err := model.NewModelFromString(aclModel)
+	if err != nil {
+		t.Fatalf("NewModelFromString: %v", err)
+	}
+	se, err := casbin.NewSyncedEnforcer(m)
+	if err != nil {
+		t.Fatalf("NewSyncedEnforcer: %v", err)
+	}
+	if _, err := se.AddPolicy("alice", "order", "read"); err != nil {
+		t.Fatalf("AddPolicy: %v", err)
+	}
+
+	az, err := casbinauth.New(se)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Claim under test: concurrent read-only Allow calls are race-free (the
+	// adapter adds no shared mutable state on the call path). NOT under test:
+	// safety under concurrent policy reload/mutation — delegated to Casbin's
+	// SyncedEnforcer contract.
+	caller := auth.Identity{Subject: "alice"}
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			if err := az.Allow(context.Background(), caller, "read", auth.Resource{Type: "order"}); err != nil {
+				t.Errorf("Allow: unexpected error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
 }
