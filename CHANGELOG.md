@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The idempotency adapter slice: a Redis-backed `Store` implementing core's
+`ports/idempotency.Store`. Bumps the core dependency to `v0.8.0`, which
+publishes the `idempotency` contract. No breaking changes to the v0.7.0
+surface; HTTP enforcement middleware (key/header extraction, scope and
+fingerprint builders, response capture and replay) and `examples/orders`
+idempotency wiring are deferred to a later cycle.
+
+### Added
+
+- `idempotency/redis` (`redisidempotency`): a Redis-backed `Store` adapter
+  wrapping any `redis.Scripter` (`*redis.Client`, `*redis.ClusterClient`,
+  `*redis.Ring`) as `go-ddd-core` `ports/idempotency.Store`. Each of
+  `Begin`/`Finish`/`Cancel` is a single-key Lua script, so the reserve/
+  finish/cancel transition is atomic without a Go-side lock. Ownership is a
+  `crypto/rand` lease token minted in Go; an in-progress reservation carries a
+  `PEXPIRE` lease whose expiry IS the reclaim/liveness mechanism, and a
+  completed record carries a separate non-sliding retention TTL. Configurable
+  via `WithKeyPrefix`, `WithLeaseTTL`, and `WithRetention` (both durations must
+  be `>= 1ms` or `New` fails loud). `Finish`/`Cancel` map a stale/forged token,
+  an already-completed record, or a vanished record to `errorsx.CodeConflict`
+  (NOT applied), and a transport failure to `errorsx.CodeUnavailable`
+  (INDETERMINATE). Passes core's `RunStoreContract` and `RunReclaimContract`
+  against a real Redis via testcontainers.
+
 ## [v0.7.0] - 2026-06-05
 
 The authorization (AuthZ) adapter slice: a Casbin-backed `Authorizer`

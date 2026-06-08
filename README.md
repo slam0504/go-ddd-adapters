@@ -9,7 +9,19 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.7.0` is the latest tagged release — the authorization (AuthZ)
+`v0.8.0` adds the idempotency slice. The `idempotency/redis` adapter
+implements core's `idempotency.Store` over Redis: `Begin`/`Finish`/
+`Cancel` are single-key Lua scripts (atomic without a Go-side lock),
+ownership is a `crypto/rand` lease token, an in-progress reservation
+auto-expires via `PEXPIRE` (this expiry IS the reclaim mechanism), and a
+completed record carries a separate non-sliding retention TTL. Accepts
+any `redis.Scripter` (`*redis.Client` / `*redis.ClusterClient` /
+`*redis.Ring`); configurable via `WithKeyPrefix` / `WithLeaseTTL` /
+`WithRetention` (both durations must be `>= 1ms`). Passes core's
+`RunStoreContract` and `RunReclaimContract` against a real Redis via
+testcontainers. Requires `go-ddd-core v0.8.0` (`ports/idempotency.Store`).
+
+`v0.7.0` adds the authorization (AuthZ)
 slice. The `auth/casbin` adapter implements core's `auth.Authorizer`
 by wrapping a caller-built Casbin enforcer behind a one-method
 `Enforcer` interface (both `*casbin.Enforcer` and
@@ -68,6 +80,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 | `auth/jwt` | `auth.TokenVerifier` | [golang-jwt v5][gjwt]; static keys (HMAC / RSA / ECDSA), algorithm-locked, secure-by-default (`exp` required, RFC 7518 §3.2 HMAC length, RSA >= 2048, ECDSA on-curve) |
 | `transport/http/stdlib/authmw` | `auth.TokenVerifier` (consumed) | stdlib `net/http` bearer middleware; strict single-header extraction (case-insensitive scheme, no trimming, whitespace rejected), stores verified `auth.Identity` in the request context, sanitizes failures (401 sentinels kept, uncoded -> fixed 500) + RFC 6750 `WWW-Authenticate` |
 | `auth/casbin` | `auth.Authorizer` | [Casbin v3][casbin]; wraps a caller-built enforcer behind a one-method `Enforcer` interface (`*casbin.Enforcer` / `*casbin.SyncedEnforcer`), default `(sub, obj, act)` request builder with `Type:ID` object encoding, overridable via `WithRequestBuilder`; deny -> `ErrForbidden`, malformed -> `ErrInvalidAuthorizationRequest`, engine/ctx/builder errors passed through |
+| `idempotency/redis` | `idempotency.Store` | [go-redis v9][goredis]; atomic single-key Lua reserve/finish/cancel, `crypto/rand` lease-token ownership, `PEXPIRE`-based reclaim, configurable lease TTL + completed-record retention (see the Redis-version note under [Compatibility matrix](#compatibility-matrix) for the cluster/ring caveat) |
 | `logger/slogger` | `logger.Logger` | `log/slog` (stdlib) |
 | `observability/otel` | `observability.Provider` | OpenTelemetry SDK v1.32 |
 
@@ -75,11 +88,13 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 [pgx]: https://github.com/jackc/pgx
 [gjwt]: https://github.com/golang-jwt/jwt
 [casbin]: https://github.com/casbin/casbin
+[goredis]: https://github.com/redis/go-redis
 
 ## Compatibility matrix
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.8.0` | `v0.8.0` | `>= 1.25` |
 | `v0.7.0` | `v0.7.0` | `>= 1.25` |
 | `v0.6.0` | `v0.6.0` | `>= 1.25` |
 | `v0.5.0` | `v0.5.0` | `>= 1.25` |
@@ -92,6 +107,15 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 (`pgx/v5 v5.9.2`, `testcontainers-go v0.42.0`,
 `golang-migrate/v4 v4.19.1`, current OpenTelemetry releases) requires
 `go 1.25.0`. Tagged `v0.3.x` and `v0.2.x` are unaffected.
+
+The `idempotency/redis` adapter (v0.8.0) needs a Redis server with
+`EVAL` + `PEXPIRE` — **Redis 2.6+** — and is tested against single-node
+`redis:7-alpine`. `*redis.ClusterClient` / `*redis.Ring` are accepted
+(the constructor takes any `redis.Scripter`) and SHOULD work because
+every script touches exactly one key, so all keys land in one hash slot
+by construction; this is derived from the single-key design and the
+go-redis `Scripter` API, and is NOT exercised by a live multi-node test
+in CI.
 
 ## Install
 
@@ -246,6 +270,54 @@ Operational properties:
 - **Schema is yours.** The adapter ships the SQL files and an
   `embed.FS` for tests, but does NOT run migrations at runtime — see
   the [Migrations](#migrations) section.
+
+### Redis idempotency Store (`idempotency/redis`)
+
+Guards inbound-request idempotency (e.g. POST retries): reserve a
+`(scope, key)` for a request `fingerprint`, do the work, then finish or
+cancel. `Begin` is atomic, so concurrent retries of the same request see
+exactly one `StatusNew`; the rest observe `StatusInProgress`,
+`StatusCompleted` (with the replayable response), or `StatusMismatch`.
+
+```go
+client := redis.NewClient(&redis.Options{Addr: "redis:6379"})
+defer client.Close()
+
+store, err := redisidempotency.New(client,
+    redisidempotency.WithKeyPrefix("orders-idem"),
+    redisidempotency.WithLeaseTTL(30*time.Second), // in-progress reclaim bound
+    redisidempotency.WithRetention(24*time.Hour),  // completed-record TTL
+)
+if err != nil { /* handle */ }
+
+res, err := store.Begin(ctx, "tenantA:placeOrder", idemKey, fingerprint)
+if err != nil { /* INDETERMINATE (not CodeConflict) — caller retries Begin */ }
+
+switch res.Status {
+case idempotency.StatusNew:
+    body, appErr := handle(ctx, req)
+    if appErr != nil {
+        // Release the reservation so a later retry can re-run.
+        _ = store.Cancel(ctx, res)
+        return appErr
+    }
+    if err := store.Finish(ctx, res, body); err != nil {
+        // CodeConflict => the reservation was reclaimed/forged; otherwise
+        // INDETERMINATE. Either way, recover by re-issuing Begin.
+    }
+case idempotency.StatusCompleted:
+    return res.Response // replay the stored response
+case idempotency.StatusInProgress:
+    return errTryAgainLater // another worker holds the lease
+case idempotency.StatusMismatch:
+    return errKeyReusedWithDifferentBody // 422-style: same key, new fingerprint
+}
+```
+
+`Finish`/`Cancel` read only `Scope`, `Key`, and `LeaseToken` from the
+reservation. An in-progress lease auto-expires after `WithLeaseTTL`,
+which is the reclaim mechanism; completed-record retention
+(`WithRetention`) is measured from `Finish` and does not slide on replay.
 
 ### Slog logger
 
