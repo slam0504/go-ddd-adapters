@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.0] - 2026-06-09
+
+The idempotency adapter slice: a Redis-backed `Store` implementing core's
+`ports/idempotency.Store`. Bumps the core dependency to `v0.8.0`, which
+publishes the `idempotency` contract. No breaking changes to the v0.7.0
+surface; HTTP enforcement middleware (key/header extraction, scope/fingerprint
+builders, response capture/replay) and `examples/orders` idempotency wiring are
+deferred to a later cycle.
+
 ### Added
 
 - `idempotency/redis` (`redisidempotency`): a Redis-backed `Store` adapter
@@ -372,7 +381,8 @@ are new packages or new exported symbols.
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.8.0...HEAD
+[v0.8.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.4.0...v0.5.0

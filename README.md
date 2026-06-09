@@ -9,7 +9,20 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.7.0` is the latest tagged release — the authorization (AuthZ)
+`v0.8.0` is the latest tagged release — the idempotency slice. The
+`idempotency/redis` adapter implements core's `idempotency.Store` over
+Redis: `Begin`/`Finish`/`Cancel` are single-key Lua scripts (atomic
+without a Go-side lock), ownership is a `crypto/rand` lease token, an
+in-progress reservation auto-expires via `PEXPIRE` (this expiry IS the
+reclaim mechanism), and a completed record carries a separate
+non-sliding retention TTL. Accepts any `redis.Scripter` (`*redis.Client`
+/ `*redis.ClusterClient` / `*redis.Ring`); configurable via
+`WithKeyPrefix` / `WithLeaseTTL` / `WithRetention` (both durations must
+be `>= 1ms`). Passes core's `RunStoreContract` and `RunReclaimContract`
+against a real Redis via testcontainers. Requires `go-ddd-core v0.8.0`
+(`ports/idempotency.Store`).
+
+`v0.7.0` adds the authorization (AuthZ)
 slice. The `auth/casbin` adapter implements core's `auth.Authorizer`
 by wrapping a caller-built Casbin enforcer behind a one-method
 `Enforcer` interface (both `*casbin.Enforcer` and
@@ -82,6 +95,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.8.0` | `v0.8.0` | `>= 1.25` |
 | `v0.7.0` | `v0.7.0` | `>= 1.25` |
 | `v0.6.0` | `v0.6.0` | `>= 1.25` |
 | `v0.5.0` | `v0.5.0` | `>= 1.25` |
