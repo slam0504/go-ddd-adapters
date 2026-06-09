@@ -8,11 +8,15 @@
 //
 // Each (scope, key) is one Redis hash at a composite key:
 //
-//	keyPrefix + ":" + len(scope) + ":" + scope + key
+//	len(keyPrefix) + ":" + keyPrefix + ":" + len(scope) + ":" + scope + key
 //
-// The length-prefix on scope makes ("tenant:op","k") and ("tenant","op:k")
-// distinct keys, so a flattened tuple can never collide. Hash fields are kept
-// short to keep the payload small:
+// Length-prefixing BOTH keyPrefix and scope makes the (keyPrefix, scope, key)
+// triple encode without ambiguity: a flattened (scope,key) tuple cannot
+// collide — ("tenant:op","k") vs ("tenant","op:k") stay distinct — and a
+// client-supplied key cannot forge a collision into another Store's keyPrefix
+// namespace (keyPrefix="x"+key=":1:bc" and keyPrefix="x:1:a"+key="c" differ
+// because their leading length headers differ). Hash fields are kept short to
+// keep the payload small:
 //
 //	fp    request fingerprint
 //	st    status: "P" in-progress, "C" completed

@@ -104,3 +104,25 @@ func TestCompositeKeyTupleSeparation(t *testing.T) {
 		t.Fatalf("composite keys must differ: %q == %q", a, b)
 	}
 }
+
+func storeWithPrefix(t *testing.T, prefix string) *Store {
+	t.Helper()
+	c := redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})
+	s, err := New(c, WithKeyPrefix(prefix))
+	if err != nil {
+		t.Fatalf("New(WithKeyPrefix(%q)): %v", prefix, err)
+	}
+	return s
+}
+
+// TestCompositeKeyPrefixSeparation guards namespace isolation across Stores: a
+// client-supplied key crafted to flatten into a "nested" keyPrefix must not
+// collide. Without length-prefixing keyPrefix, both sides below produce
+// "x:1:a:1:bc"; with it they stay distinct.
+func TestCompositeKeyPrefixSeparation(t *testing.T) {
+	a := storeWithPrefix(t, "x")
+	b := storeWithPrefix(t, "x:1:a")
+	if got1, got2 := a.compositeKey("a", ":1:bc"), b.compositeKey("b", "c"); got1 == got2 {
+		t.Fatalf("composite keys must differ across prefixes: %q == %q", got1, got2)
+	}
+}

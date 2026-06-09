@@ -82,10 +82,15 @@ func New(client redis.Scripter, opts ...Option) (*Store, error) {
 	return &Store{client: client, keyPrefix: c.keyPrefix, leaseTTL: c.leaseTTL, retention: c.retention}, nil
 }
 
-// compositeKey length-prefixes scope so ("a:b","c") and ("a","b:c") never
-// collide (TupleSeparationSafety).
+// compositeKey length-prefixes BOTH keyPrefix and scope so the
+// (keyPrefix, scope, key) triple encodes without ambiguity. The length header
+// makes ("a:b","c") and ("a","b:c") distinct (TupleSeparationSafety) AND stops a
+// client-supplied key from flattening into another Store's keyPrefix namespace:
+// keyPrefix="x"+key=":1:bc" and keyPrefix="x:1:a"+key="c" no longer collide,
+// because the leading len(keyPrefix) digits differ (1 vs 5).
 func (s *Store) compositeKey(scope, key string) string {
-	return s.keyPrefix + ":" + strconv.Itoa(len(scope)) + ":" + scope + key
+	return strconv.Itoa(len(s.keyPrefix)) + ":" + s.keyPrefix + ":" +
+		strconv.Itoa(len(scope)) + ":" + scope + key
 }
 
 // newLeaseToken mints a 128-bit random ownership token in Go (NOT in Lua —
