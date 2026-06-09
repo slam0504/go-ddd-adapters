@@ -68,6 +68,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 | `auth/jwt` | `auth.TokenVerifier` | [golang-jwt v5][gjwt]; static keys (HMAC / RSA / ECDSA), algorithm-locked, secure-by-default (`exp` required, RFC 7518 §3.2 HMAC length, RSA >= 2048, ECDSA on-curve) |
 | `transport/http/stdlib/authmw` | `auth.TokenVerifier` (consumed) | stdlib `net/http` bearer middleware; strict single-header extraction (case-insensitive scheme, no trimming, whitespace rejected), stores verified `auth.Identity` in the request context, sanitizes failures (401 sentinels kept, uncoded -> fixed 500) + RFC 6750 `WWW-Authenticate` |
 | `auth/casbin` | `auth.Authorizer` | [Casbin v3][casbin]; wraps a caller-built enforcer behind a one-method `Enforcer` interface (`*casbin.Enforcer` / `*casbin.SyncedEnforcer`), default `(sub, obj, act)` request builder with `Type:ID` object encoding, overridable via `WithRequestBuilder`; deny -> `ErrForbidden`, malformed -> `ErrInvalidAuthorizationRequest`, engine/ctx/builder errors passed through |
+| `idempotency/redis` | `idempotency.Store` | [go-redis v9][goredis]; atomic single-key Lua reserve/finish/cancel, `crypto/rand` lease-token ownership, `PEXPIRE`-based reclaim, configurable lease TTL + completed-record retention (see the Redis-version note under [Compatibility matrix](#compatibility-matrix) for the cluster/ring caveat) |
 | `logger/slogger` | `logger.Logger` | `log/slog` (stdlib) |
 | `observability/otel` | `observability.Provider` | OpenTelemetry SDK v1.32 |
 
@@ -75,6 +76,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 [pgx]: https://github.com/jackc/pgx
 [gjwt]: https://github.com/golang-jwt/jwt
 [casbin]: https://github.com/casbin/casbin
+[goredis]: https://github.com/redis/go-redis
 
 ## Compatibility matrix
 
@@ -92,6 +94,18 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 (`pgx/v5 v5.9.2`, `testcontainers-go v0.42.0`,
 `golang-migrate/v4 v4.19.1`, current OpenTelemetry releases) requires
 `go 1.25.0`. Tagged `v0.3.x` and `v0.2.x` are unaffected.
+
+The `idempotency/redis` adapter needs a Redis server with
+`EVAL`, `PEXPIRE`, and multi-field `HSET`. The binding requirement is
+multi-field `HSET` (the begin/finish scripts set several hash fields in
+one call), which Redis added in **4.0** — `EVAL` + `PEXPIRE` go back to
+2.6, so the effective floor is **Redis 4.0+**. Tested against single-node
+`redis:7-alpine`. `*redis.ClusterClient` / `*redis.Ring` are accepted
+(the constructor takes any `redis.Scripter`) and SHOULD work because
+every script touches exactly one key, so all keys land in one hash slot
+by construction; this is derived from the single-key design and the
+go-redis `Scripter` API, and is NOT exercised by a live multi-node test
+in CI.
 
 ## Install
 
@@ -246,6 +260,54 @@ Operational properties:
 - **Schema is yours.** The adapter ships the SQL files and an
   `embed.FS` for tests, but does NOT run migrations at runtime — see
   the [Migrations](#migrations) section.
+
+### Redis idempotency Store (`idempotency/redis`)
+
+Guards inbound-request idempotency (e.g. POST retries): reserve a
+`(scope, key)` for a request `fingerprint`, do the work, then finish or
+cancel. `Begin` is atomic, so concurrent retries of the same request see
+exactly one `StatusNew`; the rest observe `StatusInProgress`,
+`StatusCompleted` (with the replayable response), or `StatusMismatch`.
+
+```go
+client := redis.NewClient(&redis.Options{Addr: "redis:6379"})
+defer client.Close()
+
+store, err := redisidempotency.New(client,
+    redisidempotency.WithKeyPrefix("orders-idem"),
+    redisidempotency.WithLeaseTTL(30*time.Second), // in-progress reclaim bound
+    redisidempotency.WithRetention(24*time.Hour),  // completed-record TTL
+)
+if err != nil { /* handle */ }
+
+res, err := store.Begin(ctx, "tenantA:placeOrder", idemKey, fingerprint)
+if err != nil { /* INDETERMINATE (not CodeConflict) — caller retries Begin */ }
+
+switch res.Status {
+case idempotency.StatusNew:
+    body, appErr := handle(ctx, req)
+    if appErr != nil {
+        // Release the reservation so a later retry can re-run.
+        _ = store.Cancel(ctx, res)
+        return appErr
+    }
+    if err := store.Finish(ctx, res, body); err != nil {
+        // CodeConflict => the reservation was reclaimed/forged; otherwise
+        // INDETERMINATE. Either way, recover by re-issuing Begin.
+    }
+case idempotency.StatusCompleted:
+    return res.Response // replay the stored response
+case idempotency.StatusInProgress:
+    return errTryAgainLater // another worker holds the lease
+case idempotency.StatusMismatch:
+    return errKeyReusedWithDifferentBody // HTTP 409: same key, new fingerprint
+}
+```
+
+`Finish`/`Cancel` read only `Scope`, `Key`, and `LeaseToken` from the
+reservation. An in-progress lease auto-expires after `WithLeaseTTL`,
+which is the reclaim mechanism; completed-record retention
+(`WithRetention`) is measured from `Finish` and does not slide on replay.
 
 ### Slog logger
 

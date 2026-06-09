@@ -102,6 +102,38 @@ commit `a03cc12`), GitHub Release marked Latest.
      pushed origin; GitHub Release marked Latest
      (`releases/latest` → `v0.7.0`).
 
+## v0.8.0 idempotency-redis cycle (OPEN — kickoff 2026-06-08)
+
+First consumer of core's new `ports/idempotency.Store` contract (core
+PR #17, commit `0e1292d`, deliberately left UNTAGGED pending a real
+adapter consumer — this adapter closes that tag-gate and drives core to
+`v0.8.0`). Phase scope: the Redis-backed `Store` adapter only.
+
+- Branch: `feat/idempotency-redis-v0.8.0` (off `main` `2b9ffde`).
+- Spec / plan: `/Users/eason_tseng/.claude/plans/recursive-painting-glade.md`
+  (approved). New package `idempotency/redis` (`redisidempotency`):
+  `*redis.Client`-backed `Store` whose `Begin`/`Finish`/`Cancel` each run
+  one single-key atomic Lua script; in-progress `PEXPIRE` lease IS the
+  reclaim/liveness mechanism; lease token minted in Go (`crypto/rand`).
+  Primary tests ARE core's `RunStoreContract` + `RunReclaimContract`
+  against real Redis via testcontainers.
+- Dependency: bumped core pin `v0.7.0` → pseudo-version
+  `v0.7.1-0.20260608093712-0e1292d20462` on root + `examples/orders`
+  (this kickoff commit). `redis/go-redis/v9 v9.20.0` +
+  `testcontainers-go/modules/redis v0.42.0` (matching the repo's existing
+  `testcontainers-go v0.42.0`) land when the package code imports them
+  (Task 2 / Task 3) — `go mod tidy` strips deps no package imports yet,
+  so they are added at import time, not at kickoff.
+- OUT of scope this cycle: any in-memory `Store` adapter; HTTP
+  enforcement middleware / key+fingerprint extraction / scope builders /
+  response capture-replay; `examples/orders` idempotency wiring (deferred,
+  mirroring the AuthZ "adapter first, middleware later" split).
+- Tag-gate (spec §10) progress:
+  1. ⏳ Adapter impl PR at the core pseudo-version pin (in flight).
+  2. ⏳ Core `v0.8.0` tag (publishes `ports/idempotency`).
+  3. ⏳ Adapter dep-bump PR (pseudo → `v0.8.0`, root + `examples/orders`).
+  4. ⏳ Adapter `v0.8.0` tag at the dep-bump merge + GitHub Release Latest.
+
 ## Current Branch
 
 - working tree: on `main` (this bookkeeping commit). `.serena/`,
