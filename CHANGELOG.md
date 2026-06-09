@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The idempotency adapter slice: a Redis-backed `Store` implementing core's
-`ports/idempotency.Store`. Bumps the core dependency to `v0.8.0`, which
-publishes the `idempotency` contract. No breaking changes to the v0.7.0
-surface; HTTP enforcement middleware (key/header extraction, scope and
-fingerprint builders, response capture and replay) and `examples/orders`
-idempotency wiring are deferred to a later cycle.
-
 ### Added
 
 - `idempotency/redis` (`redisidempotency`): a Redis-backed `Store` adapter

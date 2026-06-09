@@ -9,19 +9,7 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.8.0` adds the idempotency slice. The `idempotency/redis` adapter
-implements core's `idempotency.Store` over Redis: `Begin`/`Finish`/
-`Cancel` are single-key Lua scripts (atomic without a Go-side lock),
-ownership is a `crypto/rand` lease token, an in-progress reservation
-auto-expires via `PEXPIRE` (this expiry IS the reclaim mechanism), and a
-completed record carries a separate non-sliding retention TTL. Accepts
-any `redis.Scripter` (`*redis.Client` / `*redis.ClusterClient` /
-`*redis.Ring`); configurable via `WithKeyPrefix` / `WithLeaseTTL` /
-`WithRetention` (both durations must be `>= 1ms`). Passes core's
-`RunStoreContract` and `RunReclaimContract` against a real Redis via
-testcontainers. Requires `go-ddd-core v0.8.0` (`ports/idempotency.Store`).
-
-`v0.7.0` adds the authorization (AuthZ)
+`v0.7.0` is the latest tagged release — the authorization (AuthZ)
 slice. The `auth/casbin` adapter implements core's `auth.Authorizer`
 by wrapping a caller-built Casbin enforcer behind a one-method
 `Enforcer` interface (both `*casbin.Enforcer` and
@@ -94,7 +82,6 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
-| `v0.8.0` | `v0.8.0` | `>= 1.25` |
 | `v0.7.0` | `v0.7.0` | `>= 1.25` |
 | `v0.6.0` | `v0.6.0` | `>= 1.25` |
 | `v0.5.0` | `v0.5.0` | `>= 1.25` |
@@ -108,7 +95,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 `golang-migrate/v4 v4.19.1`, current OpenTelemetry releases) requires
 `go 1.25.0`. Tagged `v0.3.x` and `v0.2.x` are unaffected.
 
-The `idempotency/redis` adapter (v0.8.0) needs a Redis server with
+The `idempotency/redis` adapter needs a Redis server with
 `EVAL`, `PEXPIRE`, and multi-field `HSET`. The binding requirement is
 multi-field `HSET` (the begin/finish scripts set several hash fields in
 one call), which Redis added in **4.0** — `EVAL` + `PEXPIRE` go back to
@@ -313,7 +300,7 @@ case idempotency.StatusCompleted:
 case idempotency.StatusInProgress:
     return errTryAgainLater // another worker holds the lease
 case idempotency.StatusMismatch:
-    return errKeyReusedWithDifferentBody // 422-style: same key, new fingerprint
+    return errKeyReusedWithDifferentBody // HTTP 409: same key, new fingerprint
 }
 ```
 
