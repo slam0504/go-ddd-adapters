@@ -22,6 +22,10 @@
 // An in-progress record carries PEXPIRE leaseTTL; a completed record carries
 // PEXPIRE retention.
 //
+// The begin and finish scripts set several hash fields in one HSET call.
+// Multi-field HSET was introduced in Redis 4.0, which is therefore the minimum
+// server version (EVAL and PEXPIRE alone go back to 2.6).
+//
 // # Error mapping
 //
 // Begin returns a Reservation whose Status is one of New / InProgress /

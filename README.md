@@ -109,7 +109,10 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 `go 1.25.0`. Tagged `v0.3.x` and `v0.2.x` are unaffected.
 
 The `idempotency/redis` adapter (v0.8.0) needs a Redis server with
-`EVAL` + `PEXPIRE` — **Redis 2.6+** — and is tested against single-node
+`EVAL`, `PEXPIRE`, and multi-field `HSET`. The binding requirement is
+multi-field `HSET` (the begin/finish scripts set several hash fields in
+one call), which Redis added in **4.0** — `EVAL` + `PEXPIRE` go back to
+2.6, so the effective floor is **Redis 4.0+**. Tested against single-node
 `redis:7-alpine`. `*redis.ClusterClient` / `*redis.Ring` are accepted
 (the constructor takes any `redis.Scripter`) and SHOULD work because
 every script touches exactly one key, so all keys land in one hash slot

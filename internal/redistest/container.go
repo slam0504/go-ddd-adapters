@@ -12,8 +12,10 @@ import (
 )
 
 // RedisImage is the container image used by StartContainer. Pinned to a
-// specific major so behavior is reproducible; the adapter only needs EVAL +
-// PEXPIRE (Redis 2.6+), so 7 is comfortably above the floor.
+// specific major so behavior is reproducible. The adapter's binding floor is
+// multi-field HSET (used by the begin/finish scripts), which Redis added in
+// 4.0; EVAL + PEXPIRE go back to 2.6. So the real minimum is Redis 4.0+, and 7
+// is comfortably above it.
 const RedisImage = "redis:7-alpine"
 
 // StartContainer boots a throwaway Redis testcontainer, opens a connected
