@@ -102,37 +102,61 @@ commit `a03cc12`), GitHub Release marked Latest.
      pushed origin; GitHub Release marked Latest
      (`releases/latest` → `v0.7.0`).
 
-## v0.8.0 idempotency-redis cycle (OPEN — kickoff 2026-06-08)
+## v0.8.0 idempotency-redis cycle (CLOSED — shipped + tagged 2026-06-09)
 
 First consumer of core's new `ports/idempotency.Store` contract (core
 PR #17, commit `0e1292d`, deliberately left UNTAGGED pending a real
-adapter consumer — this adapter closes that tag-gate and drives core to
-`v0.8.0`). Phase scope: the Redis-backed `Store` adapter only.
+adapter consumer — this adapter closed that tag-gate and drove core to
+`v0.8.0`). Phase scope: the Redis-backed `Store` adapter only. Released
+as adapter `v0.8.0` (annotated tag at merge commit `fbd6f65`), GitHub
+Release marked Latest (`releases/latest` → `v0.8.0`). Downstream services
+can pin via `go get github.com/slam0504/go-ddd-adapters@v0.8.0`.
 
-- Branch: `feat/idempotency-redis-v0.8.0` (off `main` `2b9ffde`).
-- Spec / plan: `/Users/eason_tseng/.claude/plans/recursive-painting-glade.md`
-  (approved). New package `idempotency/redis` (`redisidempotency`):
-  `*redis.Client`-backed `Store` whose `Begin`/`Finish`/`Cancel` each run
-  one single-key atomic Lua script; in-progress `PEXPIRE` lease IS the
-  reclaim/liveness mechanism; lease token minted in Go (`crypto/rand`).
-  Primary tests ARE core's `RunStoreContract` + `RunReclaimContract`
-  against real Redis via testcontainers.
-- Dependency: bumped core pin `v0.7.0` → pseudo-version
-  `v0.7.1-0.20260608093712-0e1292d20462` on root + `examples/orders`
-  (this kickoff commit). `redis/go-redis/v9 v9.20.0` +
+- Branch: `feat/idempotency-redis-v0.8.0` (off `main` `2b9ffde`), deleted.
+- Spec / plan: `/Users/eason_tseng/.claude/plans/recursive-painting-glade.md`.
+  New package `idempotency/redis` (`redisidempotency`): a `redis.Scripter`-
+  backed `Store` (accepts `*redis.Client` / `*redis.ClusterClient` /
+  `*redis.Ring`) whose `Begin`/`Finish`/`Cancel` each run one single-key
+  atomic Lua script; in-progress `PEXPIRE` lease IS the reclaim/liveness
+  mechanism; lease token minted in Go (`crypto/rand`); completed records
+  carry a separate non-sliding retention TTL. `compositeKey`
+  length-prefixes BOTH `keyPrefix` and `scope` (prefix-free encoding —
+  guards tuple-flatten AND cross-Store namespace collisions). Primary
+  tests ARE core's `RunStoreContract` + `RunReclaimContract` against real
+  Redis via testcontainers; plus adapter-specific reclaim + retention
+  (expiry / non-sliding) tests.
+- Dependency: added `redis/go-redis/v9 v9.20.0` +
   `testcontainers-go/modules/redis v0.42.0` (matching the repo's existing
-  `testcontainers-go v0.42.0`) land when the package code imports them
-  (Task 2 / Task 3) — `go mod tidy` strips deps no package imports yet,
-  so they are added at import time, not at kickoff.
+  `testcontainers-go v0.42.0`). Core pin promoted pseudo-version
+  `v0.7.1-0.20260608093712-0e1292d20462` → `v0.8.0` on root +
+  `examples/orders` at the dep-bump. Redis floor is **4.0+** (multi-field
+  `HSET`); cluster/ring support is an API-derived claim (single-key per
+  script), NOT a live multi-node CI test.
 - OUT of scope this cycle: any in-memory `Store` adapter; HTTP
   enforcement middleware / key+fingerprint extraction / scope builders /
   response capture-replay; `examples/orders` idempotency wiring (deferred,
   mirroring the AuthZ "adapter first, middleware later" split).
 - Tag-gate (spec §10) progress:
-  1. ⏳ Adapter impl PR at the core pseudo-version pin (in flight).
-  2. ⏳ Core `v0.8.0` tag (publishes `ports/idempotency`).
-  3. ⏳ Adapter dep-bump PR (pseudo → `v0.8.0`, root + `examples/orders`).
-  4. ⏳ Adapter `v0.8.0` tag at the dep-bump merge + GitHub Release Latest.
+  1. ✅ Adapter impl PR #27 merged (merge commit `5248bd5`, 2026-06-09),
+     CI 5/5 green at the core pseudo-version pin. Three review findings
+     closed in-band before merge: P1 `compositeKey` cross-Store namespace
+     collision (now length-prefixes `keyPrefix` too, `d3b5f2f`); P2
+     `StatusMismatch` doc 422 → HTTP 409 per core contract (`489783c`);
+     P2 premature v0.8.0 release framing reverted to the impl-PR
+     convention (`489783c`).
+  2. ✅ Core `v0.8.0` tagged (core agent: tag object `202d437` → merge
+     commit `b0a0e74`; release-prep PR #19 + bookkeeping PR #20; core
+     `main` head `14c7165`), GitHub Release Latest. Publishes
+     `ports/idempotency`. go.sum `/go.mod` hash byte-identical
+     pseudo → `v0.8.0` (released from the same contract commit content).
+  3. ✅ Adapter dep-bump PR #28 (`chore/bump-core-v0.8.0`) merged (merge
+     commit `fbd6f65`, CI 5/5 green): core pin pseudo → `v0.8.0` on root +
+     `examples/orders` (+ `go mod tidy`, no extra drift); no adapter code
+     change. Bookkeeping rode in this PR (CHANGELOG `[Unreleased]` →
+     `[v0.8.0] - 2026-06-09` + narrative + compare links; README v0.8.0
+     Status paragraph + compat matrix row).
+  4. ✅ Adapter `v0.8.0` annotated (tag at `fbd6f65`), pushed origin;
+     GitHub Release marked Latest (`releases/latest` → `v0.8.0`).
 
 ## Current Branch
 
@@ -319,6 +343,7 @@ adapter consumer — this adapter closes that tag-gate and drives core to
 | `eventbus/outbox` | `eventbus.Outbox` / `OutboxStore` / `Relay` | in-process `Memory` + polling `Relay` — **non-transactional test/dev only**; DLQ via local `DeadLetterRecorder`; `HeaderRestorer` callback |
 | `eventbus/outbox/pgx` | `eventbus.Outbox` / `OutboxStore` / `outbox.DeadLetterRecorder` | pgx/v5 + Postgres 12+; lease-based claim with `FOR UPDATE SKIP LOCKED`, `claim_token` UUID guard, separate `outbox_dead_letters` table, safe for multiple Relay instances |
 | `ports/database/pgx` | `database.TxManager` | pgx/v5 pool + ctx-bound transaction handle (`pgxdb.WithTx` / `pgxdb.TxFromContext` / `pgxdb.Executor`) |
+| `idempotency/redis` | `idempotency.Store` | go-redis v9 (any `redis.Scripter`); atomic single-key Lua `Begin`/`Finish`/`Cancel`, `crypto/rand` lease-token ownership, `PEXPIRE`-based reclaim, non-sliding completed-record retention; `WithKeyPrefix` / `WithLeaseTTL` / `WithRetention` (>= 1ms). Redis 4.0+ |
 | `logger/slogger` | `logger.Logger` | stdlib `log/slog` |
 | `observability/otel` | `observability.Provider` | OTel SDK v1.32 |
 

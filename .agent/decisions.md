@@ -828,3 +828,65 @@ caught a goimports `local-prefixes` grouping miss in the test files
   #25 merged, core `v0.7.0` tagged, adapter dep-bump PR #26 merged CI
   5/5, adapter `v0.7.0` annotated (tag object `e304ec7` → `a03cc12`) +
   pushed + GitHub Release Latest (`releases/latest` → `v0.7.0`).
+
+## v0.8.0 idempotency/redis Store adapter (2026-06-09 cycle)
+
+- **Engine: go-redis v9.20.0; constructor takes any `redis.Scripter`,
+  not concrete `*redis.Client`.** Keeps the client choice with the caller
+  (`*redis.Client` / `*redis.ClusterClient` / `*redis.Ring` all satisfy
+  `redis.Scripter`) and lets unit tests use a fake. Mirrors the casbin
+  "depend on a narrow interface" decision.
+- **Typed-nil guard via explicit type switch on the three documented
+  concrete go-redis types; no generic reflect.** A typed-nil custom
+  `Scripter` stays the caller's bug (documented in doc.go) — same scope
+  discipline as casbin's `Enforcer` guard.
+- **Atomicity is one single-key Lua script per method, NOT a Go mutex.**
+  Redis is single-threaded, so an `EVAL` runs to completion without
+  interleaving — that is what makes reserve-or-report atomic (two
+  concurrent `Begin` can never both see `StatusNew`). Lease token is
+  minted in Go via `crypto/rand` and passed as `ARGV` — scripts never
+  generate randomness (Lua must be deterministic for replication).
+- **Single-key-per-script is the Redis Cluster invariant.** A clustered
+  `EVAL` may only touch one hash slot; one key per script satisfies that
+  by construction, so cluster/ring SHOULD work with no hash tag. This is
+  an API-derived claim, NOT a live multi-node CI test (CI runs single-node
+  `redis:7-alpine`). If a future change makes a script touch multiple
+  keys, they MUST share a `{…}` hash tag.
+- **`compositeKey` length-prefixes BOTH `keyPrefix` and `scope`
+  (prefix-free encoding).** The first draft prefixed only `scope`, which a
+  PR #27 review (P1) showed allowed a client-supplied key to flatten into
+  another Store's `keyPrefix` namespace (`prefix="x",key=":1:bc"` and
+  `prefix="x:1:a",key="c"` both → `x:1:a:1:bc`). Length-prefixing both
+  makes the `(keyPrefix, scope, key)` triple injective — guards the
+  tuple-flatten case AND cross-Store collisions. Regression test
+  `TestCompositeKeyPrefixSeparation`.
+- **Sub-millisecond TTL is rejected at `New` (fail-loud), not rounded.**
+  `WithLeaseTTL` / `WithRetention` must be `>= 1ms`: both feed Redis
+  `PEXPIRE` (ms granularity), so a positive sub-ms value truncates to 0
+  via `.Milliseconds()` and `PEXPIRE 0` would fail at runtime after `New`
+  already returned. `ErrLeaseTTLTooSmall` / `ErrRetentionTooSmall`.
+- **`StatusMismatch` maps to HTTP 409, not 422.** A PR #27 review (P2)
+  caught README prose saying "422-style"; core's `ports/idempotency`
+  contract mandates 409. Corrected in `489783c`.
+- **Retention is adapter policy and non-sliding.** Core leaves
+  completed-record retention to the adapter; a replay (`Begin` hit on a
+  completed record) does NOT touch the TTL, so the window is measured from
+  `Finish`, not the last read. Covered by adapter-specific tests
+  (`RunStoreContract` does not exercise it).
+- **Redis floor is 4.0+ (multi-field `HSET`).** `EVAL` + `PEXPIRE` alone
+  go back to 2.6, but the begin/finish scripts set several hash fields in
+  one `HSET`; documented in doc.go + README rather than claiming a 6.2+
+  floor nothing needs.
+- **Phase scope: Redis `Store` only.** HTTP enforcement middleware
+  (key/header extraction, scope/fingerprint builders, response capture/
+  replay) and `examples/orders` idempotency wiring are deferred — mirrors
+  the AuthN/AuthZ "adapter first, middleware later" split.
+- **Tag at the dep-bump merge, not the impl merge** (same rationale as
+  v0.6.0 / v0.7.0): adapter `v0.8.0` annotated at `fbd6f65` (PR #28), so
+  the tagged tree pins core at released `v0.8.0`, never a pseudo-version.
+- **Tag-gate CLOSED (2026-06-09):** all 4 spec §10 steps done — impl PR
+  #27 merged (`5248bd5`) at the pseudo-pin, core `v0.8.0` tagged
+  (`14c7165`), adapter dep-bump PR #28 merged CI 5/5 (`fbd6f65`), adapter
+  `v0.8.0` annotated at `fbd6f65` + pushed + GitHub Release Latest
+  (`releases/latest` → `v0.8.0`). go.sum `/go.mod` hash byte-identical
+  pseudo → `v0.8.0`, confirming core released the same contract commit.
