@@ -117,6 +117,34 @@ Last verified: 2026-05-20 Asia/Taipei (post PR #14 merge at `2e9e96d`)
   standalone `goimports -local github.com/slam0504/go-ddd-adapters
   -l`.
 
+- v0.8.0 idempotency/redis (PR #27, merge `5248bd5`): three review
+  findings closed in-band before merge, all independently verified
+  against authoritative evidence first.
+  - **P1 (CONFIRMED, real)** — `compositeKey` only length-prefixed
+    `scope`, not `keyPrefix`, so a client-supplied key could flatten into
+    another Store's namespace: `prefix="x",key=":1:bc"` and
+    `prefix="x:1:a",key="c"` both produced `x:1:a:1:bc`. Fixed by
+    length-prefixing `keyPrefix` too (prefix-free/injective encoding) +
+    regression test `TestCompositeKeyPrefixSeparation` + doc update
+    (`d3b5f2f`).
+  - **P2 (CONFIRMED via core source)** — README said `StatusMismatch` was
+    "422-style"; core's `ports/idempotency` contract mandates HTTP 409.
+    Corrected (`489783c`).
+  - **P2 (CONFIRMED via git diff of #25/#26)** — the impl PR prematurely
+    included v0.8.0 release framing (Status paragraph + compat-matrix row
+    + CHANGELOG "Bumps core to v0.8.0" prose) while still pinning the core
+    pseudo-version. Reverted to the established impl-PR-vs-dep-bump-PR
+    convention; the release narrative was re-added in dep-bump PR #28
+    (`fbd6f65`). One deliberate scope call: kept the README
+    Redis-requirement technical paragraph (doc.go is authoritative), only
+    removing its stray "(v0.8.0)" label (`489783c`).
+- v0.8.0 dep-bump (PR #28, merge `fbd6f65`): CI 5/5 green first try; no
+  review findings (pure dep promotion + bookkeeping). Pre-merge guard
+  added a verification not in prior cycles — confirmed the go.sum
+  `/go.mod` hash was byte-identical pseudo → `v0.8.0`, proving core tagged
+  the release from the exact commit content the impl PR was developed and
+  conformance-tested against.
+
 ## Current Open Review Items
 
 - None.

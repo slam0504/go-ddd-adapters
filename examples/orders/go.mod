@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/slam0504/go-ddd-adapters v0.0.0-00010101000000-000000000000
-	github.com/slam0504/go-ddd-core v0.8.0
+	github.com/slam0504/go-ddd-core v0.8.1-0.20260616032638-784ef3ea2bcc
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/redpanda v0.42.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.32.0

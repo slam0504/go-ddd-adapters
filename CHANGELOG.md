@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `jobs/asynq` (`jobsasynq`): the first `ports/jobs` adapter — a Redis-backed
+  `Enqueuer` + `Worker` over `github.com/hibiken/asynq` v0.24.1. Exact-type-match
+  dispatch (not `asynq.ServeMux`), two-class Enqueue error mapping, a 30-day
+  default scheduling horizon (out-of-horizon `ProcessAt` rejected at Enqueue),
+  1h default completed-task retention, and an at-least-once delivery guarantee
+  with retry→archive dead-lettering. Passes core's `jobstest.RunContract` plus
+  the full (0)+(a)–(v) tag-gate acceptance suite under `-race` + testcontainers
+  Redis. Functional options: `WithQueue`, `WithSchedulingHorizon`,
+  `WithRetention`, `WithMaxRetry`, `WithRetryDelay`, `WithTaskTimeout`,
+  `WithConcurrency`, `WithShutdownTimeout`, `WithLogger`.
+
 ## [v0.8.0] - 2026-06-09
 
 The idempotency adapter slice: a Redis-backed `Store` implementing core's
