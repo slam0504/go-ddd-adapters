@@ -137,8 +137,19 @@ Fixed-precedence error evaluation, matching the contract:
 
 Asynq options applied per Enqueue: `asynq.ProcessAt(job.ProcessAt)` when
 non-zero; `asynq.Retention(cfg.retention)`; `asynq.Queue(cfg.queue)`;
-`asynq.MaxRetry(cfg.maxRetry)`. `ProcessAt` zero ⇒ ASAP (no option). A past
-`ProcessAt` is already eligible, never an error (criterion p).
+`asynq.MaxRetry(cfg.maxRetry)`; `asynq.Timeout(cfg.taskTimeout)`. `ProcessAt`
+zero ⇒ ASAP (no option). A past `ProcessAt` is already eligible, never an error
+(criterion p).
+
+**Default task timeout (user-visible):** Asynq applies a **30-minute** handler
+timeout when no `Timeout`/`Deadline` option is set. The contract permits an
+adapter/deployment deadline (`jobs.Handler` doc: "MAY carry an
+adapter/deployment deadline"), but this is a user-visible behaviour, so the
+adapter sets it explicitly from `WithTaskTimeout` (default `30m`, matching
+Asynq) and the `doc.go` policy section names the value. A handler that exceeds
+it has its ctx expire and the attempt is an ordinary failed attempt (retry per
+schedule), per the contract's "ctx error from Handle is an ordinary failed
+attempt".
 
 ### 4.2 Dispatch — exact-type-match map (criteria k, u, d)
 
@@ -180,8 +191,9 @@ adapter.
 | Option | Applies to | Default | Validation |
 | --- | --- | --- | --- |
 | `WithSchedulingHorizon(d)` | Enqueuer | `DefaultSchedulingHorizon` = `30*24h` | `d > 0` |
-| `WithRetention(d)` | Enqueuer | `DefaultRetention` = `1h` | `d >= 1s` (Asynq stores `int64(d.Seconds())`; sub-second truncates to `PEXPIRE`-equivalent 0 → lost completion evidence) |
-| `WithQueue(name)` | both | `"default"` | non-empty |
+| `WithRetention(d)` | Enqueuer | `DefaultRetention` = `1h` | `d >= 1s` (Asynq stores retention as integer seconds — `int64(d.Seconds())`; a sub-second value truncates to 0 and loses completed-task evidence) |
+| `WithQueue(name)` | both | `"default"` | non-blank (`strings.TrimSpace(name) != ""` — a blank like `" "` is dropped by Asynq on the worker side and silently falls back to the default queue) |
+| `WithTaskTimeout(d)` | Enqueuer (set as the `asynq.Timeout` task option) | Asynq default `30m` when no `Timeout`/`Deadline` option is set | `d > 0` |
 | `WithMaxRetry(n)` | Enqueuer | Asynq default (25) | `n >= 0` |
 | `WithRetryDelay(fn)` | Worker | Asynq default exponential | non-nil |
 | `WithConcurrency(n)` | Worker | a small fixed default (e.g. 10) | `n > 0` |
@@ -192,18 +204,28 @@ adapter.
 tunable, and so the archive-path acceptance test can set a small max instead of
 driving Asynq's default 25 attempts.
 
-### 5.2 `RedisConnOpt` validation (constructor-returns-error, not panic)
+### 5.2 `RedisConnOpt` validation — shape only, no reachability (constructor-returns-error, not panic)
 
 Asynq panics on an unsupported / nil `RedisConnOpt` when it builds the
-client/server/inspector. The constructors MUST instead return a coded error:
+client/server/inspector. The constructors MUST instead return a coded error —
+but they validate only the **shape** of the opt, never Redis **reachability**:
 
 - reject a nil `RedisConnOpt` up front (`CodeInvalidArgument`);
-- build the Asynq client (Enqueuer) / inspector eagerly inside the constructor,
-  recovering any panic into a coded `errorsx` (`CodeInvalidArgument` for a
-  malformed opt). The Worker's `asynq.Server` is built lazily in `Run` (its
-  lifecycle is tied to `Run`), but the same connection opt is validated at
-  construction by building the shared inspector / a cheap client probe so a bad
-  opt fails at `New`, not deep inside `Run`.
+- build the Asynq client (Enqueuer) inside the constructor, recovering any
+  panic from a malformed opt into a coded `errorsx` (`CodeInvalidArgument`).
+- the Worker's `asynq.Server` is built lazily in `Run`; the constructor only
+  shape-validates the opt (e.g. the same panic-to-error guard), it does NOT
+  open a connection.
+
+**No `Ping` / reachability probe at `New`.** Reachability is checked by `Run`,
+not the constructor — see §7. Rationale: criterion (h) requires a *fatal
+startup* (unreachable backend) to surface as `Run` returning a coded
+`CodeUnavailable`. `asynq.Server.Start` does **not** fail synchronously when
+Redis is unreachable (it logs and retries in the background), and a constructor
+`Ping` would swallow that startup-fatal endpoint by failing earlier at `New`.
+So the Enqueuer's unreachable-backend signal comes from `EnqueueContext`
+(§4.1), and the Worker's comes from an explicit reachability check inside `Run`
+**before** `srv.Start` (§7).
 
 ## 6. Single-source declared values & test introspection (criteria v, s)
 
@@ -240,21 +262,33 @@ adapter itself uses — no second copy.
 
 - ctx already cancelled at entry → return `nil` without starting (no server
   built).
+- **explicit reachability check first (criterion h).** Because
+  `asynq.Server.Start` does NOT fail synchronously on an unreachable Redis (it
+  logs + retries in the background), `Run` performs its own reachability probe
+  (e.g. `inspector.Ping` / a `PING` on the resolved conn) **before** `srv.Start`.
+  An unreachable backend here is an independent fatal → return coded `errorsx`
+  `CodeUnavailable`, never a ctx error (endpoint B). Other pre-start
+  misconfiguration → `CodeInternal` / `CodeInvalidArgument` per the taxonomy.
 - build `asynq.Server` with resolved Concurrency / ShutdownTimeout / Logger /
-  RetryDelayFunc; `srv.Start(root)`.
-  - start error (independent fatal, no cancellation) → coded `errorsx`
-    (`CodeUnavailable` unreachable / `CodeInternal` otherwise), never a ctx
-    error (criterion h, endpoint B).
+  RetryDelayFunc, **and `asynq.Config.BaseContext = func() context.Context {
+  return runCtx }`** so every handler ctx derives from Run's ctx (§criterion j
+  below); `srv.Start(root)`. A `Start` error that does surface is still mapped
+  to a coded `errorsx` (endpoint B).
 - `<-ctx.Done()` → `srv.Shutdown()` (bounded graceful drain; requeue/teardown
   failures are Asynq-internal, logged via the configured logger, **never**
   change the return) → return `nil` (criterion c, endpoint A). The
   teardown-failure variant (injected shutdown-path backend error) still returns
   `nil`.
-- Handlers receive an Asynq server-derived ctx that is cancelled at shutdown
-  (criterion j). A handler ignoring its cancelled ctx is orphaned and MUST NOT
-  block Run's return (liveness over graceful drain); post-return ack of a
-  straggler is binary (completed atomically, or not at all — Asynq's `Done` is
-  an atomic Lua script), upholding the recoverable-state model.
+- **Handler ctx cancellation (criterion j) comes from `BaseContext`, not from
+  Asynq's shutdown.** In v0.24.1 `processor.shutdown()` only waits up to
+  `ShutdownTimeout` and then aborts/requeues in-flight tasks — it does **not**
+  cancel the handler's ctx. Wiring `BaseContext` to `runCtx` makes each
+  handler ctx a child of Run's ctx, so cancelling Run cancels every in-flight
+  handler ctx (a handler observing its ctx can stop promptly). A handler that
+  ignores its cancelled ctx is orphaned and MUST NOT block Run's return
+  (liveness over graceful drain); post-return ack of a straggler is binary
+  (completed atomically, or not at all — Asynq's `Done` is an atomic Lua
+  script), upholding the recoverable-state model.
 - Concurrent Enqueue + Run under `-race` is clean; the two Run endpoints are
   asserted without a simultaneous-overlap tie-break (criterion l).
 
@@ -277,7 +311,7 @@ mapping, payload-copy helper.
 | (g) | malformed Enqueue writes nothing (Inspector introspection) |
 | (h) | fatal startup → coded `errorsx`, not a ctx error |
 | (i) | enqueue payload snapshot |
-| (j) | handler ctx cancelled on shutdown |
+| (j) | handler ctx (derived from Run ctx via `BaseContext`) cancelled when Run is cancelled |
 | (k) | exact-type-match dispatch rejects prefixes |
 | (l) | concurrent Enqueue clean under -race + Run endpoints |
 | (m) | out-of-horizon `ProcessAt` rejected at Enqueue (precedence over cancelled ctx) |
@@ -296,10 +330,12 @@ CI: extend the `integration-test` job's root-module step to include
 
 ## 9. Risks / decisions to validate in the plan
 
-- **Worker connection validation timing** (§5.2): confirm the cheapest reliable
-  way to fail a bad `RedisConnOpt` at `New` without prematurely opening a
-  long-lived server connection. Candidate: build the shared `asynq.Inspector`
-  at `New` (also reused by tests) and `Ping`.
+- **Run-side reachability probe** (§5.2 / §7): confirm the cheapest reliable
+  `Run`-time probe that surfaces an unreachable backend as `CodeUnavailable`
+  before `srv.Start` (candidate: a short `asynq.Inspector.Ping` / raw `PING`
+  built from the resolved conn), WITHOUT moving reachability into the
+  constructor (which would swallow criterion (h)'s fatal-startup endpoint). The
+  constructor stays shape-only.
 - **(s2) path selection:** prefer the graceful-shutdown immediate-requeue path
   where the contract allows, to keep the suite fast and deterministic; reserve
   the 3-minute recoverer-bound crash path only where (s2)'s "new Worker actually
