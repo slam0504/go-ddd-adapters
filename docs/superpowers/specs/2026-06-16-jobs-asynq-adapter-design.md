@@ -265,7 +265,8 @@ adapter itself uses — no second copy.
 - **explicit reachability check first (criterion h).** Because
   `asynq.Server.Start` does NOT fail synchronously on an unreachable Redis (it
   logs + retries in the background), `Run` performs its own reachability probe
-  (e.g. `inspector.Ping` / a `PING` on the resolved conn) **before** `srv.Start`.
+  (a short-lived `redis.UniversalClient` from `RedisConnOpt.MakeRedisClient()`,
+  `Ping(ctx)`d then closed) **before** `srv.Start`.
   An unreachable backend here is an independent fatal → return coded `errorsx`
   `CodeUnavailable`, never a ctx error (endpoint B). Other pre-start
   misconfiguration → `CodeInternal` / `CodeInvalidArgument` per the taxonomy.
@@ -332,10 +333,11 @@ CI: extend the `integration-test` job's root-module step to include
 
 - **Run-side reachability probe** (§5.2 / §7): confirm the cheapest reliable
   `Run`-time probe that surfaces an unreachable backend as `CodeUnavailable`
-  before `srv.Start` (candidate: a short `asynq.Inspector.Ping` / raw `PING`
-  built from the resolved conn), WITHOUT moving reachability into the
-  constructor (which would swallow criterion (h)'s fatal-startup endpoint). The
-  constructor stays shape-only.
+  before `srv.Start`. Candidate: a short-lived `redis.UniversalClient` built
+  from `RedisConnOpt.MakeRedisClient()` and `Ping(ctx)`d, then closed (the
+  v0.24.1 public `asynq.Inspector` exposes no `Ping`). This MUST stay in `Run`,
+  not the constructor (a New-time probe would swallow criterion (h)'s
+  fatal-startup endpoint). The constructor stays shape-only.
 - **(s2) path selection:** prefer the graceful-shutdown immediate-requeue path
   where the contract allows, to keep the suite fast and deterministic; reserve
   the 3-minute recoverer-bound crash path only where (s2)'s "new Worker actually
