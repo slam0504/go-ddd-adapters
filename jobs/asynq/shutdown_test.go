@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/slam0504/go-ddd-core/pkg/errorsx"
 	"github.com/slam0504/go-ddd-core/ports/jobs"
 
@@ -124,45 +125,99 @@ func TestShutdown_ConcurrentEnqueueAndRunEndpoints(t *testing.T) {
 	assertRunNilWithin(t, done, w.ShutdownWithin(), "l shutdown")
 }
 
-// (t) accepted-but-ack-lost fault: an Enqueue that errors mid-flight follows
-// class-2 rules (ctx error OR coded non-Unknown) + zero JobInfo, and caller
-// mutation after the error does not corrupt an accepted job's payload
-// (snapshot-before-submit). Modeled by a deadline that trips during the backend
-// call against a reachable server.
+// (t) accepted-but-ack-lost fault: the backend ACCEPTS the job, but the caller
+// observes a class-2 error before the ack lands. A go-redis hook lets the asynq
+// enqueue Lua script actually run (the task IS written to Redis), then replaces
+// the result of that successful EVAL/EVALSHA with context.DeadlineExceeded — so
+// Enqueue returns a class-2 error + zero JobInfo even though the job was
+// accepted. The stored task must carry the ORIGINAL payload: snapshot-before-
+// submit isolates it from the caller mutation after Enqueue returns. (A bare
+// short-deadline would only ever exercise the pre-write ctx entry check, class
+// 2a, and never this accepted-but-ack-lost path — so this uses a deterministic
+// injected fault instead.)
 func TestShutdown_AcceptedButAckLost_SnapshotIsolation(t *testing.T) {
 	_, addr := startRedisContainer(t)
-	insp := newInspector(t, addr)
-	e := mustEnqueuer(t, addr, jobsasynq.WithQueue("t-queue"))
+	insp := newInspector(t, addr) // separate, un-hooked client for introspection
 
-	// A very short deadline may surface a ctx error from EnqueueContext even if
-	// the backend accepted the write — the class-2 indeterminate case.
+	hook := &ackLostHook{}
+	e, err := jobsasynq.NewEnqueuer(hookedConnOpt{addr: addr, hook: hook}, jobsasynq.WithQueue("t-queue"))
+	if err != nil {
+		t.Fatalf("NewEnqueuer: %v", err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+
 	payload := []byte("origt")
-	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
-	defer cancel()
-	info, err := e.Enqueue(ctx, jobs.Job{Type: "t:job", Payload: payload})
-	// Mutate the caller's slice immediately after the call returns.
+	hook.armed.Store(true)
+	info, err := e.Enqueue(context.Background(), jobs.Job{Type: "t:job", Payload: payload})
+	hook.armed.Store(false)
+	// Mutate the caller's slice immediately after Enqueue returns.
 	for i := range payload {
 		payload[i] = 'Z'
 	}
-	if err == nil {
-		// Backend won the race: accepted. JobInfo is valid; the stored payload
-		// must still be "origt" (snapshot isolated it from the mutation above).
-		ti, gerr := insp.GetTaskInfo("t-queue", info.ID)
-		if gerr != nil {
-			t.Fatalf("accepted job not found: %v", gerr)
-		}
-		if string(ti.Payload) != "origt" {
-			t.Fatalf("stored payload = %q, want \"origt\" (snapshot must isolate caller mutation)", ti.Payload)
-		}
-		return
+
+	if !hook.injected.Load() {
+		t.Fatal("hook never injected an ack-lost error — the accepted-but-ack-lost path was not exercised")
 	}
-	// Error path: class-2 — ctx error OR coded non-Unknown; zero JobInfo.
+	// Enqueue must report a class-2 error (ctx error OR coded non-Unknown) + zero JobInfo.
+	if err == nil {
+		t.Fatal("Enqueue returned nil despite the injected ack-lost error")
+	}
 	if !errors.Is(err, context.DeadlineExceeded) && errorsx.CodeOf(err) == errorsx.CodeUnknown {
 		t.Fatalf("error neither ctx nor coded non-Unknown: %v", err)
 	}
 	if info.ID != "" {
 		t.Fatalf("error carried non-zero JobInfo.ID %q", info.ID)
 	}
+
+	// Despite the error, Redis ACCEPTED the job. It must be present with the
+	// ORIGINAL payload (snapshot isolated it from the post-Enqueue mutation).
+	qinfo, qerr := insp.GetQueueInfo("t-queue")
+	if qerr != nil {
+		t.Fatalf("queue not found — job was not accepted, so this is not the accepted-but-ack-lost case: %v", qerr)
+	}
+	if qinfo.Size != 1 {
+		t.Fatalf("accepted task count = %d, want exactly 1", qinfo.Size)
+	}
+	tasks, lerr := insp.ListPendingTasks("t-queue")
+	if lerr != nil {
+		t.Fatalf("ListPendingTasks: %v", lerr)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("pending tasks = %d, want 1", len(tasks))
+	}
+	if string(tasks[0].Payload) != "origt" {
+		t.Fatalf("stored payload = %q, want \"origt\" (snapshot must isolate caller mutation)", tasks[0].Payload)
+	}
+}
+
+// ackLostHook lets a redis command run, then (while armed) replaces the result
+// of the first successful EVAL/EVALSHA — the asynq enqueue Lua script — with
+// context.DeadlineExceeded, modelling a job the backend accepted but whose ack
+// the caller never observed.
+type ackLostHook struct {
+	armed    atomic.Bool
+	injected atomic.Bool
+}
+
+func (h *ackLostHook) DialHook(next goredis.DialHook) goredis.DialHook { return next }
+
+func (h *ackLostHook) ProcessHook(next goredis.ProcessHook) goredis.ProcessHook {
+	return func(ctx context.Context, cmd goredis.Cmder) error {
+		err := next(ctx, cmd) // actually execute: the task is written to Redis
+		if err == nil && h.armed.Load() {
+			switch cmd.Name() {
+			case "eval", "evalsha":
+				h.armed.Store(false) // inject exactly once
+				h.injected.Store(true)
+				return context.DeadlineExceeded
+			}
+		}
+		return err
+	}
+}
+
+func (h *ackLostHook) ProcessPipelineHook(next goredis.ProcessPipelineHook) goredis.ProcessPipelineHook {
+	return next
 }
 
 // --- ported spike tests (constructors now return error) ---
