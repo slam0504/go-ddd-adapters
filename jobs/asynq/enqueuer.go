@@ -119,8 +119,15 @@ func classifyBackendErr(err error) errorsx.Code {
 
 // validateConnOptShape rejects a RedisConnOpt whose MakeRedisClient does not
 // yield a redis.UniversalClient (the type Asynq would panic on). It builds and
-// immediately closes a client; go-redis is lazy so this opens no connection.
-func validateConnOptShape(r asynq.RedisConnOpt) error {
+// immediately closes a client; go-redis is lazy so this opens no connection. A
+// MakeRedisClient that panics on a malformed opt is recovered into a normal
+// constructor error so callers never see Asynq's panic (spec §5.2).
+func validateConnOptShape(r asynq.RedisConnOpt) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = ErrInvalidRedisConnOpt
+		}
+	}()
 	c, ok := r.MakeRedisClient().(goredis.UniversalClient)
 	if !ok {
 		return ErrInvalidRedisConnOpt

@@ -19,6 +19,25 @@ type badConnOpt struct{}
 
 func (badConnOpt) MakeRedisClient() interface{} { return "not a client" }
 
+// panicConnOpt panics in MakeRedisClient, mimicking a malformed asynq.RedisConnOpt.
+// The constructor must recover this into ErrInvalidRedisConnOpt, never propagate
+// the panic (spec §5.2).
+type panicConnOpt struct{}
+
+func (panicConnOpt) MakeRedisClient() interface{} { panic("boom: malformed conn opt") }
+
+func TestNewEnqueuer_PanicConnOptBecomesError(t *testing.T) {
+	if _, err := NewEnqueuer(panicConnOpt{}); !errors.Is(err, ErrInvalidRedisConnOpt) {
+		t.Fatalf("panicking conn opt: err = %v, want ErrInvalidRedisConnOpt (recovered, not panicked)", err)
+	}
+}
+
+func TestNewWorker_PanicConnOptBecomesError(t *testing.T) {
+	if _, err := NewWorker(panicConnOpt{}); !errors.Is(err, ErrInvalidRedisConnOpt) {
+		t.Fatalf("panicking conn opt: err = %v, want ErrInvalidRedisConnOpt (recovered, not panicked)", err)
+	}
+}
+
 func TestNewEnqueuer_NilConnOpt(t *testing.T) {
 	if _, err := NewEnqueuer(nil); !errors.Is(err, ErrNilRedisConnOpt) {
 		t.Fatalf("nil conn opt: err = %v, want ErrNilRedisConnOpt", err)

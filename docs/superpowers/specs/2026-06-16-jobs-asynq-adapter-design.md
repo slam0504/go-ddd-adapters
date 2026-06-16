@@ -198,7 +198,7 @@ adapter.
 | `WithRetryDelay(fn)` | Worker | Asynq default exponential | non-nil |
 | `WithConcurrency(n)` | Worker | a small fixed default (e.g. 10) | `n > 0` |
 | `WithShutdownTimeout(d)` | Worker | a fixed default (e.g. 8s) | `d > 0` |
-| `WithLogger(asynq.Logger)` | Worker | Asynq default | non-nil |
+| `WithLogger(asynq.Logger)` | Worker | Asynq default | `nil` reverts to the Asynq default (no error) — mirrors `httpstdlib.WithLogger(nil)` |
 
 `WithMaxRetry` pairs with `WithRetryDelay` so retry/dead-letter policy is fully
 tunable, and so the archive-path acceptance test can set a small max instead of
