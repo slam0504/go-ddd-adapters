@@ -890,3 +890,64 @@ caught a goimports `local-prefixes` grouping miss in the test files
   `v0.8.0` annotated at `fbd6f65` + pushed + GitHub Release Latest
   (`releases/latest` → `v0.8.0`). go.sum `/go.mod` hash byte-identical
   pseudo → `v0.8.0`, confirming core released the same contract commit.
+
+## Planned jobs/asynq adapter decisions (2026-06-16)
+
+- **Public constructor shape uses functional options, not an exported
+  Config struct.** Recent port adapters (`auth/jwt`, `auth/casbin`,
+  `idempotency/redis`, `transport/http/stdlib`, `authmw`) expose
+  `New(..., opts ...Option)` with a private config and run validation after
+  all options are applied. The Asynq spike's exported Config struct is not
+  the dominant current pattern; keep required dependencies as explicit
+  constructor arguments and expose optional policy through
+  `Option func(*config)`.
+- **Scheduling horizon is finite by default and configurable.** Core
+  `ports/jobs` defines horizon as an adapter-declared property and requires
+  out-of-horizon `ProcessAt` to be rejected at `Enqueue` with
+  `errorsx.CodeInvalidArgument` before ctx/backend observation. Asynq has no
+  useful native upper-bound policy here, so the adapter declares
+  `defaultSchedulingHorizon = 30 * 24 * time.Hour`: long enough for ordinary
+  delayed work, short enough to avoid treating Redis scheduled queues as a
+  long-term calendar store. Expose `WithSchedulingHorizon`, validate
+  non-positive values at construction, document the default, and test the
+  exact rejection precedence. Do not make the horizon opt-in/off by default;
+  that would leave the public default without the acceptance-visible guard.
+- **Implementation PR uses real Redis/testcontainers for backend coverage;
+  no miniredis smoke as part of the acceptance suite.** The acceptance
+  behaviours depend on Asynq's Redis state machine, leases, retry/archive
+  transitions, completed-task retention, and Inspector views. Keep the
+  integration path single-source on `redis:7-alpine`, matching the existing
+  `idempotency/redis` precedent. Pure non-backend unit tests are still fine
+  for option validation, error mapping helpers, and payload-copy helpers, but
+  they must not duplicate backend semantics through a fake Redis.
+- **Validate `asynq.RedisConnOpt` before constructing Asynq objects.** Asynq
+  v0.24.1's `NewClient`, `NewServer`, and `NewInspector` panic when
+  `RedisConnOpt.MakeRedisClient()` does not return a `redis.UniversalClient`.
+  The adapter constructor should guard nil / unsupported options and return a
+  normal error instead of exposing that panic. If validation opens a probe
+  client, close it before constructing the real Asynq client/server.
+- **Retention option follows Asynq's second-granularity storage.**
+  `asynq.Retention(d)` stores `int64(d.Seconds())`; the adapter should reject
+  positive sub-second values at construction instead of silently truncating to
+  zero. Use `DefaultRetention = 1 * time.Hour` so tests and operators have a
+  completed-task evidence window for `JobState` without retaining ordinary
+  completed jobs as long as idempotency replay records; callers can set a
+  different finite retention with `WithRetention`.
+- **Do not use `asynq.ServeMux` for dispatch.** Asynq first tries an exact
+  match, then falls back to longest-prefix matching. Core `ports/jobs`
+  requires exact task-type registration, so `Worker` owns its own
+  exact-match registry and returns an error for an unregistered type, letting
+  Asynq route it through retry/archive rather than acking success.
+- **Redelivery/recoverability bounds must include Asynq's internal lease
+  cycle, not only `ShutdownTimeout`.** In v0.24.1, active task leases are
+  created/extended for 30s, the recoverer only handles leases expired at least
+  30s ago, and the recoverer polls once per minute. Any exported test fixture
+  bound for `activeLeased` → retry/archive/completed must be derived from
+  those constants plus the adapter shutdown timeout, or tests should be scoped
+  to shutdown paths where Asynq requeues immediately.
+- **Expose retry count together with retry delay.** If the adapter exposes
+  `WithRetryDelay`, also expose `WithMaxRetry` with
+  `DefaultMaxRetry = 25` (Asynq's default) and fail-loud validation for
+  negative values. Otherwise the public retry/dead-letter policy is only half
+  configurable, and archive-path tests either need to burn through 25 attempts
+  or rely on internal-only hooks.
