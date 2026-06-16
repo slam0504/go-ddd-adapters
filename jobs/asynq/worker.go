@@ -81,7 +81,9 @@ func (w *Worker) Register(jobType string, h jobs.Handler) error {
 // (unreachable backend) returns a coded errorsx, never a ctx error.
 func (w *Worker) Run(ctx context.Context) error {
 	if ctx.Err() != nil {
-		return nil // already cancelled: return nil without starting
+		// Contract: Run on an already-cancelled ctx returns nil without starting.
+		// Returning nil here is intentional, not error suppression.
+		return nil //nolint:nilerr // pre-cancelled ctx is the expected stop signal
 	}
 	// Reachability probe BEFORE Start: asynq.Server.Start does not fail
 	// synchronously on an unreachable Redis (it logs + retries in the
