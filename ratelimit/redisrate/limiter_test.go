@@ -1,12 +1,15 @@
 package redisratelimit
 
 import (
+	"context"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/redis/go-redis/v9"
+	"github.com/slam0504/go-ddd-core/pkg/errorsx"
 )
 
 var validLimit = redis_rate.Limit{Rate: 1, Burst: 1, Period: time.Hour}
@@ -106,5 +109,39 @@ func TestMapResultDenied(t *testing.T) {
 	}
 	if got.Remaining > got.Limit {
 		t.Fatalf("Remaining (%d) > Limit (%d) while both known", got.Remaining, got.Limit)
+	}
+}
+
+func TestMapErrorCtxVerbatim(t *testing.T) {
+	if got := mapError(context.Canceled); !errors.Is(got, context.Canceled) {
+		t.Fatalf("mapError(Canceled) = %v, want errors.Is(context.Canceled)", got)
+	}
+	if got := mapError(context.DeadlineExceeded); !errors.Is(got, context.DeadlineExceeded) {
+		t.Fatalf("mapError(DeadlineExceeded) = %v, want errors.Is(context.DeadlineExceeded)", got)
+	}
+	// A ctx error must pass through verbatim, NOT be re-coded.
+	if code := errorsx.CodeOf(mapError(context.Canceled)); code == errorsx.CodeUnavailable || code == errorsx.CodeInternal {
+		t.Fatalf("ctx error must pass through verbatim, got coded %v", code)
+	}
+}
+
+func TestClassifyBackendErr(t *testing.T) {
+	if got := classifyBackendErr(&net.OpError{Op: "dial", Err: errors.New("connection refused")}); got != errorsx.CodeUnavailable {
+		t.Fatalf("net.Error → %v, want CodeUnavailable", got)
+	}
+	if got := classifyBackendErr(errors.New("dial tcp 127.0.0.1:6379: connect: connection refused")); got != errorsx.CodeUnavailable {
+		t.Fatalf("connection-refused string → %v, want CodeUnavailable", got)
+	}
+	if got := classifyBackendErr(errors.New("some weird logical failure")); got != errorsx.CodeInternal {
+		t.Fatalf("unclassifiable → %v, want CodeInternal (never CodeUnknown)", got)
+	}
+	if got := classifyBackendErr(errors.New("anything at all")); got == errorsx.CodeUnknown {
+		t.Fatal("classifyBackendErr must never return CodeUnknown")
+	}
+}
+
+func TestMapErrorNeverUnknown(t *testing.T) {
+	if code := errorsx.CodeOf(mapError(errors.New("boom"))); code == errorsx.CodeUnknown {
+		t.Fatal("mapError must produce a coded error (CodeOf != CodeUnknown) for non-ctx backend errors")
 	}
 }

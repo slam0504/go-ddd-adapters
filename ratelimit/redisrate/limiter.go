@@ -1,8 +1,14 @@
 package redisratelimit
 
 import (
+	"context"
+	"errors"
+	"net"
+	"strings"
+
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/redis/go-redis/v9"
+	"github.com/slam0504/go-ddd-core/pkg/errorsx"
 	"github.com/slam0504/go-ddd-core/ports/ratelimit"
 )
 
@@ -78,4 +84,32 @@ func mapResult(res *redis_rate.Result, limit redis_rate.Limit) ratelimit.Result 
 	}
 	// Allowed: RetryAfter stays the zero value; res.RetryAfter (-1) is NEVER read.
 	return out
+}
+
+// mapError maps a redis_rate.Allow error to the contract's CLASS-2 shape. A ctx
+// error (cancellation/expiry observed DURING the call) is returned verbatim; any
+// other backend error gets a coded errorsx surface whose CodeOf is never
+// CodeUnknown.
+func mapError(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return errorsx.Wrap(classifyBackendErr(err), "redisratelimit: allow", err)
+}
+
+// classifyBackendErr maps a non-ctx backend error to CodeUnavailable (transport
+// / reachability failure) or CodeInternal (everything else) — never
+// CodeUnknown. Mirrors jobs/asynq.classifyBackendErr.
+func classifyBackendErr(err error) errorsx.Code {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return errorsx.CodeUnavailable
+	}
+	msg := err.Error()
+	for _, s := range []string{"connection refused", "no such host", "i/o timeout", "dial tcp", "connect:", "EOF", "broken pipe", "reset by peer"} {
+		if strings.Contains(msg, s) {
+			return errorsx.CodeUnavailable
+		}
+	}
+	return errorsx.CodeInternal
 }
