@@ -9,7 +9,20 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.8.0` is the latest tagged release — the idempotency slice. The
+`v0.9.0` is the latest tagged release — the background-jobs slice. The
+`jobs/asynq` adapter implements core's `jobs.Enqueuer` + `jobs.Worker`
+over [hibiken/asynq][asynq] (Redis-backed). Dispatch is exact-type-match
+(not `asynq.ServeMux`), Enqueue maps failures into two classes, a 30-day
+default scheduling horizon rejects an out-of-horizon `ProcessAt` at
+Enqueue, completed tasks are retained 1h by default, and delivery is
+at-least-once with retry→archive dead-lettering. Configurable via
+`WithQueue` / `WithSchedulingHorizon` / `WithRetention` / `WithMaxRetry`
+/ `WithRetryDelay` / `WithTaskTimeout` / `WithConcurrency` /
+`WithShutdownTimeout` / `WithLogger`. Passes core's `jobstest.RunContract`
+against a real Redis via testcontainers. Requires `go-ddd-core v0.9.0`
+(`ports/jobs`). Redis 4.0+.
+
+`v0.8.0` adds the idempotency slice. The
 `idempotency/redis` adapter implements core's `idempotency.Store` over
 Redis: `Begin`/`Finish`/`Cancel` are single-key Lua scripts (atomic
 without a Go-side lock), ownership is a `crypto/rand` lease token, an
@@ -97,6 +110,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.9.0` | `v0.9.0` | `>= 1.25` |
 | `v0.8.0` | `v0.8.0` | `>= 1.25` |
 | `v0.7.0` | `v0.7.0` | `>= 1.25` |
 | `v0.6.0` | `v0.6.0` | `>= 1.25` |

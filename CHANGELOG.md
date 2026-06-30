@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.9.0] - 2026-06-16
+
+The background-jobs adapter slice: a Redis-backed `Enqueuer` + `Worker`
+implementing core's `ports/jobs`. Bumps the core dependency to `v0.9.0`,
+which publishes the `jobs` contract. No breaking changes to the v0.8.0
+surface. Cron / recurring scheduling stays deliberately out of the
+contract (no consumer evidence yet for schedule identity / overlap /
+missed-run semantics); retry / backoff / dead-letter are adapter policy,
+here implemented as retry→archive.
+
 ### Added
 
 - `jobs/asynq` (`jobsasynq`): the first `ports/jobs` adapter — a Redis-backed
@@ -394,7 +404,8 @@ are new packages or new exported symbols.
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.9.0...HEAD
+[v0.9.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.8.0...v0.9.0
 [v0.8.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.5.0...v0.6.0

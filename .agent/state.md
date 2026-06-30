@@ -1,17 +1,18 @@
 # go-ddd-adapters State
 
-Last verified: 2026-06-05 Asia/Taipei (on `chore/bump-core-v0.6.0` off `main` `3cdfff5` — v0.6.0 release-prep: core pin → `v0.6.0`, local full suite green, lint deferred to CI)
-Source: `git log main --oneline -10` shows merge commit `45274dd`
-(`Merge pull request #22 from slam0504/chore/v0.5.0-tag-bookkeeping`).
-PR #22's CI was 5/5 green at merge tip (build+test root 1m12s +
-`examples/orders` 1m25s, golangci-lint root 52s + `examples/orders`
-54s, integration testcontainers 1m17s — workflow run
-26409070511). Adapter `v0.5.0` annotated at `45274dd` (tag object
-`a02f6d4`), pushed; GitHub Release marked Latest at
-https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.5.0.
-`git status --short` shows only the expected local-only set after
-this commit lands (`?? .agent/context-checkpoint.log`,
-`?? .agent/session-checkpoint.md`, `?? .serena/`).
+Last verified: 2026-06-24 Asia/Taipei (on `main` `040228b` — v0.9.0
+bookkeeping reconciliation: CHANGELOG cut to `[v0.9.0]`, README
+Status/compat-matrix updated, this file + cross-repo
+`.agent-memory/go-ddd.md` caught up from v0.8.0 to v0.9.0).
+Source: `git log main --oneline` head is `040228b`
+(`Merge pull request #30 from slam0504/chore/bump-core-v0.9.0`). Adapter
+`v0.9.0` annotated at `040228b`, pushed; GitHub Release marked Latest at
+https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.9.0. Core
+`v0.9.0` tag verified present (`8ef2fbe`, local + origin). This pass
+touched docs / agent-memory only — no `.go` changed, so no `go build/test`
+was run. `git status --short` currently shows the pending bookkeeping
+edits (`M CHANGELOG.md`, `M README.md`, `M .agent/state.md`) not yet
+committed, alongside `?? .serena/`.
 
 ## v0.6.0 AuthN cycle (CLOSED — shipped + tagged 2026-06-05)
 
@@ -158,12 +159,64 @@ can pin via `go get github.com/slam0504/go-ddd-adapters@v0.8.0`.
   4. ✅ Adapter `v0.8.0` annotated (tag at `fbd6f65`), pushed origin;
      GitHub Release marked Latest (`releases/latest` → `v0.8.0`).
 
+## v0.9.0 jobs-asynq cycle (CLOSED — shipped + tagged 2026-06-16)
+
+First consumer of core's `ports/jobs` contract (core left the contract
+UNTAGGED pending a real adapter consumer — this adapter closed that
+tag-gate and drove core to `v0.9.0`). Phase scope: the asynq-backed
+`Enqueuer` + `Worker` only. Released as adapter `v0.9.0` (annotated tag at
+merge commit `040228b`), GitHub Release marked Latest
+(`releases/latest` → `v0.9.0`, named "v0.9.0 — jobs/asynq adapter").
+Downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.9.0`.
+
+- Branch: `feat/jobs-asynq-v0.9.0` (off `main`), merged via PR #29.
+- New package `jobs/asynq` (`jobsasynq`): a Redis-backed `Enqueuer` +
+  `Worker` over `github.com/hibiken/asynq v0.24.1`. Exact-type-match
+  dispatch (NOT `asynq.ServeMux`), two-class Enqueue error mapping, a
+  30-day default scheduling horizon (out-of-horizon `ProcessAt` rejected
+  at Enqueue), 1h default completed-task retention, at-least-once delivery
+  with retry→archive dead-lettering. Functional options `WithQueue` /
+  `WithSchedulingHorizon` / `WithRetention` / `WithMaxRetry` /
+  `WithRetryDelay` / `WithTaskTimeout` / `WithConcurrency` /
+  `WithShutdownTimeout` / `WithLogger`. Redis floor 4.0+.
+- Tests: core's `jobstest.RunContract` plus the full (0)+(a)–(v) tag-gate
+  acceptance suite under `-race` + testcontainers Redis; CI runs the
+  `jobs/asynq` integration suite as its own step.
+- Dependency: added `github.com/hibiken/asynq v0.24.1`; core pin promoted
+  pseudo-version → `v0.9.0` on root + `examples/orders` at the dep-bump.
+- Tag-gate progress:
+  1. ✅ Adapter impl PR #29 merged (merge commit `1f8a685`, 2026-06-16),
+     CI green at the core pseudo-version pin. enqueuer.go panic-recover
+     added; the `(t)` accepted-but-ack-lost shutdown test was made
+     deterministic via a go-redis hook (write confirmed before injecting
+     `DeadlineExceeded`, replacing the flaky 1ns-deadline approach).
+  2. ✅ Core `v0.9.0` tagged (core agent), publishing `ports/jobs`;
+     resolvable via proxy (PR #30's `go mod` bump succeeded against it).
+  3. ✅ Adapter dep-bump PR #30 (`chore/bump-core-v0.9.0`) merged (merge
+     commit `040228b`): core pin pseudo → `v0.9.0` on root +
+     `examples/orders`; no adapter code change.
+  4. ✅ Adapter `v0.9.0` annotated (tag at `040228b`), pushed origin;
+     GitHub Release marked Latest (`releases/latest` → `v0.9.0`).
+- OUT of scope this cycle: cron / recurring scheduling (deliberately
+  excluded at the core contract — no consumer evidence yet for schedule
+  identity / overlap / missed-run semantics). `examples/orders` adds no
+  jobs demo this cycle.
+
 ## Current Branch
 
 - working tree: on `main` (this bookkeeping commit). `.serena/`,
   `.agent/context-checkpoint.log`, `.agent/session-checkpoint.md`
   remain untracked / local-only.
-- main: `45274dd` (HEAD as of 2026-05-26, post PR #22 merge —
+- main: `040228b` (HEAD as of 2026-06-16, post PR #30 merge —
+  dep-bump core → `v0.9.0`; adapter `v0.9.0` annotated here, GitHub
+  Release Latest).
+- previous main: `fbd6f65` (post PR #28 merge — dep-bump core →
+  `v0.8.0`; adapter `v0.8.0` tag here).
+- previous main: `a03cc12` (post PR #26 merge — dep-bump core →
+  `v0.7.0`; adapter `v0.7.0` tag here).
+- previous main: `1b0f3ae` (post PR #24 merge — dep-bump core →
+  `v0.6.0`; adapter `v0.6.0` tag here).
+- previous main: `45274dd` (post PR #22 merge —
   dep-bump core pseudo-version → `v0.5.0`).
 - previous main: `d9c7324` (post PR #21 merge, v0.5.0
   `transport/http/stdlib` + health adapter implementation).
@@ -173,25 +226,35 @@ can pin via `go get github.com/slam0504/go-ddd-adapters@v0.8.0`.
   pgx outbox demo).
 - previous main: `b9696f6` (post PR #18 merge, `go-ddd-core` bump to v0.4.0)
 - tags present in repo: `v0.1.0`, `v0.2.0`, `v0.3.0`, `v0.4.0`,
-  **`v0.5.0`** (annotated, pushed 2026-05-26; GitHub Release marked
-  Latest at
-  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.5.0).
-  `v0.5.0` points at merge commit `45274dd` (tag object `a02f6d4`);
-  `v0.4.0` points at `bc9b041`; `v0.3.0` at `3ce2a23`.
+  `v0.5.0`, `v0.6.0`, `v0.7.0`, `v0.8.0`, **`v0.9.0`** (latest;
+  annotated, pushed 2026-06-16; GitHub Release marked Latest at
+  https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.9.0).
+  All annotated. Tag → merge-commit targets: `v0.9.0` → `040228b`;
+  `v0.8.0` → `fbd6f65`; `v0.7.0` → `a03cc12`; `v0.6.0` → `1b0f3ae`;
+  `v0.5.0` → `45274dd`; `v0.4.0` → `bc9b041`; `v0.3.0` → `3ce2a23`;
+  `v0.2.0` → `413e069`; `v0.1.0` → `b928be7`.
 - latest commits on `main`:
-  - `45274dd` `Merge pull request #22 from slam0504/chore/v0.5.0-tag-bookkeeping`
-  - `1ca3239` `chore(release): bump core dependency to v0.5.0`
-  - `543d725` `chore(agent-memory): record v0.5.0 transport adapter implementation merge`
-  - `d9c7324` `Merge pull request #21 from slam0504/feat/transport-http-stdlib-v0.5.0`
-  - `ee0d6cf` `docs(decisions): record v0.5.0 transport/http/stdlib + health cycle`
-  - `c528261` `test(transport/http/stdlib): satisfy lint in HTTP tests`
-  - `96e7fb7` `test(transport/http/stdlib): HTTP-only integration test for main+admin lifecycle`
-  - `c0ba5f7` `docs(transport/http/stdlib/health): package doc with endpoint semantics`
-  - `dfd6516` `docs(transport/http/stdlib/health): drop misleading 'Go 1.22' from Handler doc`
-  - `0609bff` `feat(transport/http/stdlib/health): Handler combines /healthz + /readyz`
+  - `040228b` `Merge pull request #30 from slam0504/chore/bump-core-v0.9.0`
+  - `70014c0` `chore(deps): bump go-ddd-core to v0.9.0`
+  - `1f8a685` `Merge pull request #29 from slam0504/feat/jobs-asynq-v0.9.0`
+  - `7766add` `test(jobs/asynq): make criterion (t) deterministically test accepted-but-ack-lost`
+  - `3c40dac` `docs(jobs/asynq): CHANGELOG [Unreleased] entry`
+  - `e056970` `docs(jobs/asynq): README adapter row + usage sketch`
+  - `3441935` `ci(jobs/asynq): run the integration suite in CI`
+  - `e04a248` `test(jobs/asynq): shutdown/recoverability criteria (c,h,j,l,s1,s2,t,f)`
+  - `5fb8172` `test(jobs/asynq): delivery criteria (a,b,d,e,n,r)`
+  - `86937ef` `test(jobs/asynq): RunContract + validation/dispatch criteria (0,g,m,q,p,o,k,u)`
+  - `ac7a5a9` `fix(jobs/asynq): recover MakeRedisClient panic into a constructor error`
+  - `2adf521` `test(jobs/asynq): integration harness (container, JobState, hooks, logger)`
 
 ## Current Status
 
+- **v0.9.0 `jobs/asynq` background-jobs release cycle is CLOSED**
+  (adapter `v0.9.0` annotated at `040228b` on 2026-06-16, GitHub
+  Release Latest; first consumer of core `ports/jobs`, drove core to
+  `v0.9.0`). Full detail in the "v0.9.0 jobs-asynq cycle" section
+  above. The v0.6.0–v0.8.0 cycles are likewise CLOSED (see their
+  dedicated sections above).
 - **v0.5.0 `transport/http/stdlib` + health release cycle is CLOSED**
   (joint cycle with go-ddd-core; adapter `v0.5.0` annotated at
   `45274dd` on 2026-05-26, tag object `a02f6d4`, GitHub Release
@@ -344,6 +407,7 @@ can pin via `go get github.com/slam0504/go-ddd-adapters@v0.8.0`.
 | `eventbus/outbox/pgx` | `eventbus.Outbox` / `OutboxStore` / `outbox.DeadLetterRecorder` | pgx/v5 + Postgres 12+; lease-based claim with `FOR UPDATE SKIP LOCKED`, `claim_token` UUID guard, separate `outbox_dead_letters` table, safe for multiple Relay instances |
 | `ports/database/pgx` | `database.TxManager` | pgx/v5 pool + ctx-bound transaction handle (`pgxdb.WithTx` / `pgxdb.TxFromContext` / `pgxdb.Executor`) |
 | `idempotency/redis` | `idempotency.Store` | go-redis v9 (any `redis.Scripter`); atomic single-key Lua `Begin`/`Finish`/`Cancel`, `crypto/rand` lease-token ownership, `PEXPIRE`-based reclaim, non-sliding completed-record retention; `WithKeyPrefix` / `WithLeaseTTL` / `WithRetention` (>= 1ms). Redis 4.0+ |
+| `jobs/asynq` | `jobs.Enqueuer` / `jobs.Worker` | hibiken/asynq v0.24.1 (Redis-backed); exact-type-match dispatch, two-class Enqueue error mapping, 30-day default scheduling horizon, 1h default completed-task retention, at-least-once with retry→archive dead-lettering; `WithQueue` / `WithSchedulingHorizon` / `WithRetention` / `WithMaxRetry` / `WithRetryDelay` / `WithTaskTimeout` / `WithConcurrency` / `WithShutdownTimeout` / `WithLogger`. Redis 4.0+ |
 | `logger/slogger` | `logger.Logger` | stdlib `log/slog` |
 | `observability/otel` | `observability.Provider` | OTel SDK v1.32 |
 
