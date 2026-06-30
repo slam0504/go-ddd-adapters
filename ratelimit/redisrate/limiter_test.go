@@ -145,3 +145,61 @@ func TestMapErrorNeverUnknown(t *testing.T) {
 		t.Fatal("mapError must produce a coded error (CodeOf != CodeUnknown) for non-ctx backend errors")
 	}
 }
+
+// newUnreachableLimiter builds a Limiter whose client points at a closed port.
+// The precedence tests never reach the backend, so the unreachable addr proves
+// the short-circuit.
+func newUnreachableLimiter(t *testing.T) *Limiter {
+	t.Helper()
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})
+	t.Cleanup(func() { _ = client.Close() })
+	l, err := New(client, redis_rate.Limit{Rate: 1, Burst: 1, Period: time.Hour})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return l
+}
+
+func TestAllowEmptyKeyInvalidArgument(t *testing.T) {
+	l := newUnreachableLimiter(t)
+	res, err := l.Allow(context.Background(), "")
+	if code := errorsx.CodeOf(err); code != errorsx.CodeInvalidArgument {
+		t.Fatalf("empty key: code = %v, want CodeInvalidArgument (err=%v)", code, err)
+	}
+	if res.Allowed {
+		t.Fatal("empty key returned Allowed=true; an error return must not also allow")
+	}
+}
+
+func TestAllowEmptyKeyPrecedesCancelledCtx(t *testing.T) {
+	l := newUnreachableLimiter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := l.Allow(ctx, "")
+	if code := errorsx.CodeOf(err); code != errorsx.CodeInvalidArgument {
+		t.Fatalf("empty key + cancelled ctx: code = %v, want CodeInvalidArgument (precedence)", code)
+	}
+	if errors.Is(err, context.Canceled) {
+		t.Fatal("empty key must precede ctx observation")
+	}
+}
+
+func TestAllowPreCancelledCtxNoBackend(t *testing.T) {
+	l := newUnreachableLimiter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := l.Allow(ctx, "k")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-cancelled ctx: err = %v, want errors.Is(context.Canceled) with no backend contact", err)
+	}
+}
+
+func TestAllowPreExpiredCtxNoBackend(t *testing.T) {
+	l := newUnreachableLimiter(t)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, err := l.Allow(ctx, "k")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("pre-expired ctx: err = %v, want errors.Is(context.DeadlineExceeded)", err)
+	}
+}

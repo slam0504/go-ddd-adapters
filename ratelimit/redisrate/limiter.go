@@ -113,3 +113,25 @@ func classifyBackendErr(err error) errorsx.Code {
 	}
 	return errorsx.CodeInternal
 }
+
+// Allow reports whether key may proceed right now, as Result data. Ordinary
+// quota exhaustion is NOT an error — it returns Result{Allowed:false}, nil with
+// a RetryAfter hint. Fixed precedence (contract): empty key → pre-cancelled or
+// expired ctx → backend. The first two short-circuit before any Redis contact.
+func (l *Limiter) Allow(ctx context.Context, key string) (ratelimit.Result, error) {
+	if key == "" {
+		return ratelimit.Result{}, errorsx.New(errorsx.CodeInvalidArgument,
+			"redisratelimit: empty key (a missing partition key, not an anonymous caller)")
+	}
+	if err := ctx.Err(); err != nil {
+		return ratelimit.Result{}, err
+	}
+	res, err := l.limiter.Allow(ctx, encode(l.keyPrefix, key), l.limit)
+	if err != nil {
+		return ratelimit.Result{}, mapError(err)
+	}
+	return mapResult(res, l.limit), nil
+}
+
+// Compile-time assertion that *Limiter implements core's ratelimit.Limiter.
+var _ ratelimit.Limiter = (*Limiter)(nil)
