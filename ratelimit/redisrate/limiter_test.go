@@ -63,6 +63,12 @@ func TestNewValid(t *testing.T) {
 	if l.keyPrefix != "custom" {
 		t.Fatalf("keyPrefix = %q, want %q", l.keyPrefix, "custom")
 	}
+	if l.limiter == nil {
+		t.Fatal("New valid: Limiter.limiter is nil")
+	}
+	if l.limit != validLimit {
+		t.Fatalf("Limiter.limit = %+v, want %+v", l.limit, validLimit)
+	}
 }
 
 func TestMapResultAllowed(t *testing.T) {
@@ -98,7 +104,7 @@ func TestMapResultDenied(t *testing.T) {
 		Remaining:  0,
 		RetryAfter: 250 * time.Millisecond,
 		ResetAfter: time.Second,
-		Limit:      redis_rate.Limit{Rate: 1, Burst: 1, Period: time.Second},
+		Limit:      redis_rate.Limit{Rate: 1, Burst: 99, Period: time.Second},
 	}
 	got := mapResult(res, redis_rate.Limit{Rate: 1, Burst: 1, Period: time.Second})
 	if got.Allowed {
@@ -106,6 +112,9 @@ func TestMapResultDenied(t *testing.T) {
 	}
 	if got.RetryAfter != 250*time.Millisecond {
 		t.Fatalf("denied RetryAfter = %v, want 250ms (the backend hint)", got.RetryAfter)
+	}
+	if got.Limit != 1 {
+		t.Fatalf("Limit = %d, want 1 (the limit param's Burst, NOT res.Limit.Burst=99)", got.Limit)
 	}
 	if got.Remaining > got.Limit {
 		t.Fatalf("Remaining (%d) > Limit (%d) while both known", got.Remaining, got.Limit)
