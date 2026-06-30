@@ -61,3 +61,50 @@ func TestNewValid(t *testing.T) {
 		t.Fatalf("keyPrefix = %q, want %q", l.keyPrefix, "custom")
 	}
 }
+
+func TestMapResultAllowed(t *testing.T) {
+	// redis_rate returns RetryAfter = -1 when allowed; the contract REQUIRES 0.
+	res := &redis_rate.Result{
+		Allowed:    1,
+		Remaining:  9,
+		RetryAfter: -1,
+		ResetAfter: time.Second,
+		Limit:      redis_rate.Limit{Rate: 10, Burst: 10, Period: time.Second},
+	}
+	got := mapResult(res, redis_rate.Limit{Rate: 10, Burst: 10, Period: time.Second})
+	if !got.Allowed {
+		t.Fatal("Allowed=1 must map to Allowed=true")
+	}
+	if got.RetryAfter != 0 {
+		t.Fatalf("allowed RetryAfter = %v, want 0 — raw -1 must NOT leak (contract: allowed ⇒ RetryAfter 0)", got.RetryAfter)
+	}
+	if got.Limit != 10 {
+		t.Fatalf("Limit = %d, want 10 (Burst)", got.Limit)
+	}
+	if got.Remaining != 9 {
+		t.Fatalf("Remaining = %d, want 9", got.Remaining)
+	}
+	if !got.ResetAt.IsZero() {
+		t.Fatalf("ResetAt = %v, want zero (absent)", got.ResetAt)
+	}
+}
+
+func TestMapResultDenied(t *testing.T) {
+	res := &redis_rate.Result{
+		Allowed:    0,
+		Remaining:  0,
+		RetryAfter: 250 * time.Millisecond,
+		ResetAfter: time.Second,
+		Limit:      redis_rate.Limit{Rate: 1, Burst: 1, Period: time.Second},
+	}
+	got := mapResult(res, redis_rate.Limit{Rate: 1, Burst: 1, Period: time.Second})
+	if got.Allowed {
+		t.Fatal("Allowed=0 must map to Allowed=false")
+	}
+	if got.RetryAfter != 250*time.Millisecond {
+		t.Fatalf("denied RetryAfter = %v, want 250ms (the backend hint)", got.RetryAfter)
+	}
+	if got.Remaining > got.Limit {
+		t.Fatalf("Remaining (%d) > Limit (%d) while both known", got.Remaining, got.Limit)
+	}
+}

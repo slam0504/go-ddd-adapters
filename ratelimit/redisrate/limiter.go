@@ -3,6 +3,7 @@ package redisratelimit
 import (
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/redis/go-redis/v9"
+	"github.com/slam0504/go-ddd-core/ports/ratelimit"
 )
 
 // Limiter is a distributed inbound rate limiter backed by Redis (redis_rate's
@@ -54,4 +55,27 @@ func New(client redis.UniversalClient, limit redis_rate.Limit, opts ...Option) (
 		limit:     limit,
 		keyPrefix: cfg.keyPrefix,
 	}, nil
+}
+
+// mapResult projects redis_rate's GCRA result onto core's advisory Result.
+//   - Allowed: redis_rate.Allowed is a COUNT (0 = denied, >0 = allowed).
+//   - RetryAfter: redis_rate returns -1 when allowed; the contract REQUIRES 0
+//     on allow, so it is mapped explicitly (raw mapping would leak -1). On
+//     denial res.RetryAfter is > 0 and <= Period.
+//   - Limit: the GCRA instantaneous burst (limit.Burst), NOT a fixed-window
+//     quota.
+//   - Remaining: instantaneous capacity; GCRA guarantees <= Burst, so
+//     Remaining <= Limit.
+//   - ResetAt: absent (zero) — avoids client-clock skew (see doc.go scope-out).
+func mapResult(res *redis_rate.Result, limit redis_rate.Limit) ratelimit.Result {
+	out := ratelimit.Result{
+		Allowed:   res.Allowed > 0,
+		Limit:     limit.Burst,
+		Remaining: res.Remaining,
+	}
+	if !out.Allowed {
+		out.RetryAfter = res.RetryAfter
+	}
+	// Allowed: RetryAfter stays the zero value; res.RetryAfter (-1) is NEVER read.
+	return out
 }
