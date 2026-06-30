@@ -249,6 +249,19 @@ Downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.9.0`.
 
 ## Current Status
 
+- **`ratelimit/redisrate` cycle is IN PROGRESS** (started 2026-06-30,
+  branch `feat/ratelimit-redisrate`). First consumer of core's
+  `ports/ratelimit` contract (core `main` `b882796`, PR #26 — **merged
+  but UNTAGGED**, awaiting this adapter to close the tag-gate; same
+  contract-first model as jobs/idempotency). Design spec committed on the
+  feat branch
+  (`docs/superpowers/specs/2026-06-30-ratelimit-redisrate-adapter-design.md`):
+  distributed Redis limiter over `redis_rate/v10` GCRA; prefix-free
+  length-encoded key (P1), no public WithLimiter (P2), explicit
+  RetryAfter=0-on-allow (redis_rate returns -1 when allowed), ResetAt
+  absent, adapter-first (HTTP middleware deferred). Next: `writing-plans`
+  → TDD impl (~6 files). `main` is unchanged — the spec lives only on the
+  branch.
 - **v0.9.0 `jobs/asynq` background-jobs release cycle is CLOSED**
   (adapter `v0.9.0` annotated at `040228b` on 2026-06-16, GitHub
   Release Latest; first consumer of core `ports/jobs`, drove core to
