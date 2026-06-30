@@ -126,7 +126,7 @@ func TestMapErrorCtxVerbatim(t *testing.T) {
 }
 
 func TestClassifyBackendErr(t *testing.T) {
-	if got := classifyBackendErr(&net.OpError{Op: "dial", Err: errors.New("connection refused")}); got != errorsx.CodeUnavailable {
+	if got := classifyBackendErr(&net.OpError{Op: "dial", Err: errors.New("transport failure")}); got != errorsx.CodeUnavailable {
 		t.Fatalf("net.Error → %v, want CodeUnavailable", got)
 	}
 	if got := classifyBackendErr(errors.New("dial tcp 127.0.0.1:6379: connect: connection refused")); got != errorsx.CodeUnavailable {
