@@ -249,9 +249,9 @@ Downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.9.0`.
 
 ## Current Status
 
-- **`ratelimit/redisrate` cycle — IMPL PR #31 MERGED (merge `e41d80a`,
-  2026-07-01), CI was 5/5 GREEN; tag-gate steps 2–4 PENDING** (branch
-  `feat/ratelimit-redisrate` deleted post-merge). First
+- **`ratelimit/redisrate` cycle — IMPL PR #31 MERGED; core `v0.10.0` TAGGED
+  (step 2 done); dep-bump PR #32 OPEN (step 3); adapter release tag PENDING
+  (step 4)** (impl branch `feat/ratelimit-redisrate` deleted post-merge). First
   consumer of core's `ports/ratelimit` contract (core `main` `b882796`,
   PR #26 — **merged but UNTAGGED**, this adapter closes the tag-gate; same
   contract-first model as jobs/idempotency). New package
@@ -272,13 +272,18 @@ Downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.9.0`.
     unavailable/recovery/prefix-isolation leg vs real `redis:7-alpine`,
     the piece not runnable locally without Docker). This impl PR added only
     the CHANGELOG `[Unreleased]` entry + README adapter-table row.
-  - **Next: tag-gate steps 2–4 (spec §10)** — core tags
-    the ratelimit release (next minor) publishing `ports/ratelimit`;
-    adapter dep-bump PR pseudo → tag on root + `examples/orders` with
-    CHANGELOG `[Unreleased]`→`[vX.Y.0]` + README Status + compat-matrix +
-    adapter-row bookkeeping riding it; adapter release tag + GitHub Release.
-    Also post-merge: sync `.agent/decisions.md` / `.agent/review-log.md` /
-    `<workspace-root>/.agent-memory/go-ddd.md`. `main` unchanged until merge.
+  - **Tag-gate progress (spec §10):** ✅ (2) core tagged **`v0.10.0`**
+    (publishing `ports/ratelimit`; resolvable via proxy). 🔄 (3) adapter
+    dep-bump **PR #32** (`chore/bump-core-v0.10.0`, head `0f36674`) OPEN:
+    core pin pseudo → `v0.10.0` on root + `examples/orders`, CHANGELOG
+    `[Unreleased]`→`[v0.10.0] - 2026-07-01` (+ fixed the `[v0.10.0]`
+    compare-link and `[Unreleased]` reset that the initial cut left
+    dangling), README Status rewritten to the rate-limiting slice (with the
+    v0.9.0 jobs paragraph restored) + compat-matrix `v0.10.0` row; PR #32 CI
+    was 5/5 green before the bookkeeping-fix commit (re-running on
+    `0f36674`). ⏳ (4) after PR #32 merges: cut the adapter **`v0.10.0`**
+    annotated tag at the merge commit + GitHub Release Latest. `main` head is
+    `27119cd` until PR #32 merges.
 - **v0.9.0 `jobs/asynq` background-jobs release cycle is CLOSED**
   (adapter `v0.9.0` annotated at `040228b` on 2026-06-16, GitHub
   Release Latest; first consumer of core `ports/jobs`, drove core to
