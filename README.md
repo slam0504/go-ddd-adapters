@@ -21,6 +21,18 @@ prefix-free length-encoded keys, and GCRA-burst `Limit`/`Remaining` projection
 real-backend integration under `-race`. Requires `go-ddd-core v0.10.0`
 (`ports/ratelimit`). Redis 3.2+.
 
+`v0.9.0` adds the background-jobs slice. The `jobs/asynq` adapter
+implements core's `jobs.Enqueuer` + `jobs.Worker` over [hibiken/asynq][asynq]
+(Redis-backed). Dispatch is exact-type-match (not `asynq.ServeMux`), Enqueue
+maps failures into two classes, a 30-day default scheduling horizon rejects an
+out-of-horizon `ProcessAt` at Enqueue, completed tasks are retained 1h by
+default, and delivery is at-least-once with retry→archive dead-lettering.
+Configurable via `WithQueue` / `WithSchedulingHorizon` / `WithRetention` /
+`WithMaxRetry` / `WithRetryDelay` / `WithTaskTimeout` / `WithConcurrency` /
+`WithShutdownTimeout` / `WithLogger`. Passes core's `jobstest.RunContract`
+against a real Redis via testcontainers. Requires `go-ddd-core v0.9.0`
+(`ports/jobs`). Redis 4.0+.
+
 `v0.8.0` adds the idempotency slice. The
 `idempotency/redis` adapter implements core's `idempotency.Store` over
 Redis: `Begin`/`Finish`/`Cancel` are single-key Lua scripts (atomic
