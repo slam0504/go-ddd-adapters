@@ -1,18 +1,20 @@
 # go-ddd-adapters State
 
-Last verified: 2026-07-01 Asia/Taipei (on `main` `e41d80a` — `ratelimit/redisrate`
-impl PR #31 merged). Source: `git log main --oneline` head is `e41d80a`
-(`Merge pull request #31 from slam0504/feat/ratelimit-redisrate`). The
-`ratelimit/redisrate` adapter (first `ports/ratelimit` consumer) landed at the
-core pseudo-version pin `v0.9.1-0.20260630075935-b882796e716c`; PR #31 CI was
-5/5 green incl. `integration (testcontainers)`. Adapter is NOT yet tagged —
-tag-gate steps 2–4 (core tag, dep-bump PR, adapter release tag) are the pending
-continuation (see Current Status). Verification this session: root
+Last verified: 2026-07-01 Asia/Taipei (on `main` `82748cd` — `ratelimit/redisrate`
+cycle CLOSED + tagged). Source: `git log main --oneline` head is `82748cd`
+(`Merge pull request #32 from slam0504/chore/bump-core-v0.10.0`). Adapter
+**`v0.10.0`** annotated tag at `82748cd`, pushed; GitHub Release Latest
+(`gh api releases/latest` → `v0.10.0`, draft:false prerelease:false, named
+"v0.10.0 — ratelimit/redisrate adapter"). Both `go.mod` files require
+`go-ddd-core v0.10.0` (core tagged, `go mod verify` all modules OK);
+`go list -m go-ddd-adapters@v0.10.0` resolves via proxy. All four tag-gate
+steps done (impl PR #31 `e41d80a` → core `v0.10.0` → dep-bump PR #32 `82748cd`
+→ adapter `v0.10.0` tag + Release). `v0.10.0` is now the latest RELEASED adapter
+tag (supersedes `v0.9.0` `040228b`). Verification this session: root
 build/vet/`go test ./...` + `examples/orders` build/vet green, golangci-lint
-`./...` and `--build-tags=integration` 0 issues (v2 binary); the integration
-suite RUN was exercised by CI (Docker unavailable locally). Prior context: the
-v0.9.0 line remains the latest RELEASED adapter tag (`040228b`); this cycle's
-release tag is still ahead.
+`./...` and `--build-tags=integration` 0 issues (v2 binary); PR #31 and #32 CI
+both 5/5 green incl. `integration (testcontainers)` (Docker unavailable locally,
+so the integration RUN was CI-only).
 
 ## v0.6.0 AuthN cycle (CLOSED — shipped + tagged 2026-06-05)
 
@@ -249,9 +251,14 @@ Downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.9.0`.
 
 ## Current Status
 
-- **`ratelimit/redisrate` cycle — IMPL PR #31 MERGED; core `v0.10.0` TAGGED
-  (step 2 done); dep-bump PR #32 OPEN (step 3); adapter release tag PENDING
-  (step 4)** (impl branch `feat/ratelimit-redisrate` deleted post-merge). First
+- **`ratelimit/redisrate` cycle — CLOSED, shipped + tagged `v0.10.0`
+  (2026-07-01)** (all four tag-gate steps done; impl branch
+  `feat/ratelimit-redisrate` + dep-bump branch `chore/bump-core-v0.10.0`
+  deleted post-merge). Adapter `v0.10.0` annotated tag at the dep-bump merge
+  `82748cd`, pushed; GitHub Release Latest
+  (`releases/latest` → `v0.10.0`, "v0.10.0 — ratelimit/redisrate adapter");
+  downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.10.0`
+  (resolvable via proxy). First
   consumer of core's `ports/ratelimit` contract (core `main` `b882796`,
   PR #26 — **merged but UNTAGGED**, this adapter closes the tag-gate; same
   contract-first model as jobs/idempotency). New package
@@ -272,18 +279,16 @@ Downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.9.0`.
     unavailable/recovery/prefix-isolation leg vs real `redis:7-alpine`,
     the piece not runnable locally without Docker). This impl PR added only
     the CHANGELOG `[Unreleased]` entry + README adapter-table row.
-  - **Tag-gate progress (spec §10):** ✅ (2) core tagged **`v0.10.0`**
-    (publishing `ports/ratelimit`; resolvable via proxy). 🔄 (3) adapter
-    dep-bump **PR #32** (`chore/bump-core-v0.10.0`, head `0f36674`) OPEN:
-    core pin pseudo → `v0.10.0` on root + `examples/orders`, CHANGELOG
-    `[Unreleased]`→`[v0.10.0] - 2026-07-01` (+ fixed the `[v0.10.0]`
-    compare-link and `[Unreleased]` reset that the initial cut left
-    dangling), README Status rewritten to the rate-limiting slice (with the
-    v0.9.0 jobs paragraph restored) + compat-matrix `v0.10.0` row; PR #32 CI
-    was 5/5 green before the bookkeeping-fix commit (re-running on
-    `0f36674`). ⏳ (4) after PR #32 merges: cut the adapter **`v0.10.0`**
-    annotated tag at the merge commit + GitHub Release Latest. `main` head is
-    `27119cd` until PR #32 merges.
+  - **Tag-gate (spec §10) — ALL DONE:** ✅ (1) impl PR #31 merged (`e41d80a`)
+    at the pseudo-pin, CI 5/5 green. ✅ (2) core tagged **`v0.10.0`**
+    (publishing `ports/ratelimit`; resolvable via proxy). ✅ (3) adapter
+    dep-bump **PR #32** merged (merge `82748cd`, CI 5/5 green): core pin
+    pseudo → `v0.10.0` on root + `examples/orders`, CHANGELOG
+    `[Unreleased]`→`[v0.10.0] - 2026-07-01` (compare-links fixed:
+    `[v0.10.0]` link added + `[Unreleased]` reset to `v0.10.0...HEAD`),
+    README Status → rate-limiting slice (v0.9.0 jobs paragraph restored) +
+    compat-matrix `v0.10.0` row. ✅ (4) adapter **`v0.10.0`** annotated tag at
+    `82748cd`, pushed; GitHub Release Latest. `main` head is `82748cd`.
 - **v0.9.0 `jobs/asynq` background-jobs release cycle is CLOSED**
   (adapter `v0.9.0` annotated at `040228b` on 2026-06-16, GitHub
   Release Latest; first consumer of core `ports/jobs`, drove core to
