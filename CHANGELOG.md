@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ratelimit/redisrate` (`redisratelimit`): the first concrete
+  `ports/ratelimit.Limiter` — a distributed, Redis-backed inbound request
+  limiter wrapping `github.com/go-redis/redis_rate/v10` (GCRA). `New(client,
+  limit, opts...)` takes any `redis.UniversalClient` and a required positional
+  `redis_rate.Limit`; `Allow` returns the decision as data (ordinary denial is
+  `Result{Allowed:false}, nil`, never `CodeRateLimited`) with the fixed empty-key
+  → ctx → backend precedence. `RetryAfter` is explicit-zero on allow (redis_rate
+  returns `-1`); `Limit`/`Remaining` project the GCRA instantaneous burst;
+  `ResetAt` is absent. Redis keys are prefix-free length-encoded so a
+  client-supplied key cannot flatten into another namespace. `WithKeyPrefix`
+  only. Bumps the core dependency to the untagged `ports/ratelimit` contract.
+
 ## [v0.9.0] - 2026-06-16
 
 The background-jobs adapter slice: a Redis-backed `Enqueuer` + `Worker`

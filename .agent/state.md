@@ -249,6 +249,35 @@ Downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.9.0`.
 
 ## Current Status
 
+- **`ratelimit/redisrate` cycle — IMPL PR #31 OPEN, CI 5/5 GREEN, awaiting
+  merge** (branch `feat/ratelimit-redisrate`, HEAD `ee5af73`). First
+  consumer of core's `ports/ratelimit` contract (core `main` `b882796`,
+  PR #26 — **merged but UNTAGGED**, this adapter closes the tag-gate; same
+  contract-first model as jobs/idempotency). New package
+  `ratelimit/redisrate` (`redisratelimit`): distributed Redis limiter over
+  `redis_rate/v10 v10.0.1` GCRA; prefix-free length-encoded key (P1), no
+  public WithLimiter (P2), explicit RetryAfter=0-on-allow (redis_rate
+  returns -1 when allowed), denial-is-data (never `CodeRateLimited`),
+  fixed empty-key→ctx→backend precedence, Limit=Burst / Remaining=GCRA
+  burst, ResetAt absent, adapter-first (HTTP middleware deferred). Built
+  via writing-plans → subagent-driven-development (9 TDD tasks, per-task
+  review + opus final whole-branch review = READY TO MERGE, 0
+  Critical/Important). Spec + plan on the branch under
+  `docs/superpowers/{specs,plans}/2026-06-30-ratelimit-redisrate-adapter*`.
+  - **PR #31** (base `main`, non-draft, merge state CLEAN) pushed at the
+    core **pseudo-version pin** `v0.9.1-0.20260630075935-b882796e716c`
+    (root + `examples/orders`). **CI 5/5 green** incl.
+    `integration (testcontainers)` (the ratelimit RunContract +
+    unavailable/recovery/prefix-isolation leg vs real `redis:7-alpine`,
+    the piece not runnable locally without Docker). This impl PR adds only
+    the CHANGELOG `[Unreleased]` entry + README adapter-table row.
+  - **Next: merge PR #31, then tag-gate steps 2–4 (spec §10)** — core tags
+    the ratelimit release (next minor) publishing `ports/ratelimit`;
+    adapter dep-bump PR pseudo → tag on root + `examples/orders` with
+    CHANGELOG `[Unreleased]`→`[vX.Y.0]` + README Status + compat-matrix +
+    adapter-row bookkeeping riding it; adapter release tag + GitHub Release.
+    Also post-merge: sync `.agent/decisions.md` / `.agent/review-log.md` /
+    `<workspace-root>/.agent-memory/go-ddd.md`. `main` unchanged until merge.
 - **v0.9.0 `jobs/asynq` background-jobs release cycle is CLOSED**
   (adapter `v0.9.0` annotated at `040228b` on 2026-06-16, GitHub
   Release Latest; first consumer of core `ports/jobs`, drove core to
