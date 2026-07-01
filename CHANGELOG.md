@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v0.10.0] - 2026-07-01
 
 ### Added
 
@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns `-1`); `Limit`/`Remaining` project the GCRA instantaneous burst;
   `ResetAt` is absent. Redis keys are prefix-free length-encoded so a
   client-supplied key cannot flatten into another namespace. `WithKeyPrefix`
-  only. Bumps the core dependency to the untagged `ports/ratelimit` contract.
+  only. Requires `go-ddd-core v0.10.0` (`ports/ratelimit`).
 
 ## [v0.9.0] - 2026-06-16
 

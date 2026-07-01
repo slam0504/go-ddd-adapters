@@ -9,18 +9,17 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.9.0` is the latest tagged release — the background-jobs slice. The
-`jobs/asynq` adapter implements core's `jobs.Enqueuer` + `jobs.Worker`
-over [hibiken/asynq][asynq] (Redis-backed). Dispatch is exact-type-match
-(not `asynq.ServeMux`), Enqueue maps failures into two classes, a 30-day
-default scheduling horizon rejects an out-of-horizon `ProcessAt` at
-Enqueue, completed tasks are retained 1h by default, and delivery is
-at-least-once with retry→archive dead-lettering. Configurable via
-`WithQueue` / `WithSchedulingHorizon` / `WithRetention` / `WithMaxRetry`
-/ `WithRetryDelay` / `WithTaskTimeout` / `WithConcurrency` /
-`WithShutdownTimeout` / `WithLogger`. Passes core's `jobstest.RunContract`
-against a real Redis via testcontainers. Requires `go-ddd-core v0.9.0`
-(`ports/jobs`). Redis 4.0+.
+`v0.10.0` is the latest tagged release — the inbound rate-limiting slice. The
+`ratelimit/redisrate` adapter implements core's `ratelimit.Limiter` over
+[go-redis/redis_rate][redisrate] (GCRA, Redis-backed). It is a distributed
+inbound limiter: the throttling decision is data (ordinary denial is
+`Result{Allowed:false}, nil`, never `CodeRateLimited`), with the fixed
+empty-key → ctx → backend error precedence, `RetryAfter`-zero-on-allow,
+prefix-free length-encoded keys, and GCRA-burst `Limit`/`Remaining` projection
+(`ResetAt` absent). Configurable via `WithKeyPrefix`. Passes core's
+`ratelimittest.RunContract` against a real Redis via testcontainers plus
+real-backend integration under `-race`. Requires `go-ddd-core v0.10.0`
+(`ports/ratelimit`). Redis 3.2+.
 
 `v0.8.0` adds the idempotency slice. The
 `idempotency/redis` adapter implements core's `idempotency.Store` over
@@ -112,6 +111,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.10.0` | `v0.10.0` | `>= 1.25` |
 | `v0.9.0` | `v0.9.0` | `>= 1.25` |
 | `v0.8.0` | `v0.8.0` | `>= 1.25` |
 | `v0.7.0` | `v0.7.0` | `>= 1.25` |
