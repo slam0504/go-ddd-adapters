@@ -1,18 +1,18 @@
 # go-ddd-adapters State
 
-Last verified: 2026-06-24 Asia/Taipei (on `main` `040228b` — v0.9.0
-bookkeeping reconciliation: CHANGELOG cut to `[v0.9.0]`, README
-Status/compat-matrix updated, this file + cross-repo
-`.agent-memory/go-ddd.md` caught up from v0.8.0 to v0.9.0).
-Source: `git log main --oneline` head is `040228b`
-(`Merge pull request #30 from slam0504/chore/bump-core-v0.9.0`). Adapter
-`v0.9.0` annotated at `040228b`, pushed; GitHub Release marked Latest at
-https://github.com/slam0504/go-ddd-adapters/releases/tag/v0.9.0. Core
-`v0.9.0` tag verified present (`8ef2fbe`, local + origin). This pass
-touched docs / agent-memory only — no `.go` changed, so no `go build/test`
-was run. `git status --short` currently shows the pending bookkeeping
-edits (`M CHANGELOG.md`, `M README.md`, `M .agent/state.md`) not yet
-committed, alongside `?? .serena/`.
+Last verified: 2026-07-01 Asia/Taipei (on `main` `e41d80a` — `ratelimit/redisrate`
+impl PR #31 merged). Source: `git log main --oneline` head is `e41d80a`
+(`Merge pull request #31 from slam0504/feat/ratelimit-redisrate`). The
+`ratelimit/redisrate` adapter (first `ports/ratelimit` consumer) landed at the
+core pseudo-version pin `v0.9.1-0.20260630075935-b882796e716c`; PR #31 CI was
+5/5 green incl. `integration (testcontainers)`. Adapter is NOT yet tagged —
+tag-gate steps 2–4 (core tag, dep-bump PR, adapter release tag) are the pending
+continuation (see Current Status). Verification this session: root
+build/vet/`go test ./...` + `examples/orders` build/vet green, golangci-lint
+`./...` and `--build-tags=integration` 0 issues (v2 binary); the integration
+suite RUN was exercised by CI (Docker unavailable locally). Prior context: the
+v0.9.0 line remains the latest RELEASED adapter tag (`040228b`); this cycle's
+release tag is still ahead.
 
 ## v0.6.0 AuthN cycle (CLOSED — shipped + tagged 2026-06-05)
 
@@ -249,8 +249,9 @@ Downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.9.0`.
 
 ## Current Status
 
-- **`ratelimit/redisrate` cycle — IMPL PR #31 OPEN, CI 5/5 GREEN, awaiting
-  merge** (branch `feat/ratelimit-redisrate`, HEAD `ee5af73`). First
+- **`ratelimit/redisrate` cycle — IMPL PR #31 MERGED (merge `e41d80a`,
+  2026-07-01), CI was 5/5 GREEN; tag-gate steps 2–4 PENDING** (branch
+  `feat/ratelimit-redisrate` deleted post-merge). First
   consumer of core's `ports/ratelimit` contract (core `main` `b882796`,
   PR #26 — **merged but UNTAGGED**, this adapter closes the tag-gate; same
   contract-first model as jobs/idempotency). New package
@@ -264,14 +265,14 @@ Downstream pins via `go get github.com/slam0504/go-ddd-adapters@v0.9.0`.
   review + opus final whole-branch review = READY TO MERGE, 0
   Critical/Important). Spec + plan on the branch under
   `docs/superpowers/{specs,plans}/2026-06-30-ratelimit-redisrate-adapter*`.
-  - **PR #31** (base `main`, non-draft, merge state CLEAN) pushed at the
+  - **PR #31** (merge commit `e41d80a` on `main`, 2026-07-01) landed at the
     core **pseudo-version pin** `v0.9.1-0.20260630075935-b882796e716c`
-    (root + `examples/orders`). **CI 5/5 green** incl.
+    (root + `examples/orders`). **CI was 5/5 green** incl.
     `integration (testcontainers)` (the ratelimit RunContract +
     unavailable/recovery/prefix-isolation leg vs real `redis:7-alpine`,
-    the piece not runnable locally without Docker). This impl PR adds only
+    the piece not runnable locally without Docker). This impl PR added only
     the CHANGELOG `[Unreleased]` entry + README adapter-table row.
-  - **Next: merge PR #31, then tag-gate steps 2–4 (spec §10)** — core tags
+  - **Next: tag-gate steps 2–4 (spec §10)** — core tags
     the ratelimit release (next minor) publishing `ports/ratelimit`;
     adapter dep-bump PR pseudo → tag on root + `examples/orders` with
     CHANGELOG `[Unreleased]`→`[vX.Y.0]` + README Status + compat-matrix +

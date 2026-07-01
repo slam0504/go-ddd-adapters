@@ -1,6 +1,6 @@
 # go-ddd-adapters Decisions
 
-Last verified: 2026-05-18 Asia/Taipei
+Last verified: 2026-07-01 Asia/Taipei (ratelimit/redisrate cycle appended)
 
 ## Adapter Boundary
 
@@ -951,3 +951,85 @@ caught a goimports `local-prefixes` grouping miss in the test files
   negative values. Otherwise the public retry/dead-letter policy is only half
   configurable, and archive-path tests either need to burn through 25 attempts
   or rely on internal-only hooks.
+
+## ratelimit/redisrate adapter (2026-06-30 cycle)
+
+First consumer of core's `ports/ratelimit.Limiter`. New package
+`ratelimit/redisrate` (`redisratelimit`), distributed Redis limiter over
+`github.com/go-redis/redis_rate/v10 v10.0.1` (GCRA). Shipped via PR #31 (merge
+`e41d80a`) at the core pseudo-version pin; adapter release tag deferred to the
+dep-bump PR (tag-gate steps 2–4). Spec/plan under
+`docs/superpowers/{specs,plans}/2026-06-30-ratelimit-redisrate-adapter*`.
+
+- **Distributed Redis (redis_rate/GCRA) is the first driver, deliberately.**
+  Inbound throttling under horizontal scaling is meaningless per-process (real
+  quota = N×). In-process `ratelimit/memory` (x/time/rate) and a self-written
+  Lua sibling are future siblings behind the driver-named path
+  (`ratelimit/redisrate` leaves room for `ratelimit/redislua`, etc., mirroring
+  `jobs/asynq`, `pgxoutbox` naming).
+- **`New(client redis.UniversalClient, limit redis_rate.Limit, opts ...Option)`.**
+  `redis.Scripter` is insufficient — redis_rate's internal `rediser` also needs
+  `Del`, which `UniversalClient` satisfies. `limit` is **positional and
+  required** (fail-loud: Rate/Burst/Period each > 0 else `ErrInvalidLimit`); no
+  universal safe default, and a silent one would turn "forgot to configure" into
+  a silent bug. `redis_rate.Limit` is exposed directly (the package is already
+  driver-bound; wrapping it would be premature).
+- **Typed-nil guard** via explicit type switch on `*redis.Client` /
+  `*redis.ClusterClient` / `*redis.Ring` (no generic reflect); nil interface or
+  typed-nil of those three → `ErrNilClient`. A typed-nil custom client is the
+  caller's bug (documented). Mirrors `redisidempotency`.
+- **Only `WithKeyPrefix` is public — NO public `WithLimiter` (P2).** Real Redis
+  via testcontainers validates v1; a fake limiter would muddy the required-client
+  semantics of `New(client, limit)`. Error-classification paths are tested with
+  invalid/closed clients instead.
+- **Prefix-free key encoding (P1):** `encode(keyPrefix, key) =
+  fmt.Sprintf("%d:%s:%s", len(keyPrefix), keyPrefix, key)`. Length-prefixing the
+  namespace makes distinct `(keyPrefix, key)` tuples non-colliding — a
+  client-supplied key cannot flatten into another namespace (the exact bug
+  `idempotency/redis` fixed in v0.8.0). `WithKeyPrefix` defaults to non-empty
+  `"ratelimit"`; empty override still encodes injectively (`"0::"+key`). Proven
+  by an **adversarial UNIT test** on colliding tuples `("a","b:c")` vs
+  `("a:b","c")` (naive → both `a:b:c`; length-prefixed → `1:a:b:c` vs `3:a:b:c`)
+  — a "two distinct-prefix limiters" test is INSUFFICIENT (it never exercises
+  the flatten bug).
+- **Denial is DATA, not an error.** `Allow` returns `Result{Allowed:false}, nil`
+  on quota exhaustion; the adapter NEVER mints `errorsx.CodeRateLimited`. Fixed
+  precedence (mirrors `jobs.Enqueuer`): empty key → `CodeInvalidArgument` (no
+  backend) → pre-cancelled/expired ctx → verbatim ctx error (no backend) →
+  backend.
+- **`Result` mapping (spec §5):** `Allowed = res.Allowed > 0` (redis_rate
+  `Allowed` is a COUNT); **`RetryAfter` = 0 when allowed** — redis_rate returns
+  `-1` when allowed, so `mapResult` assigns `RetryAfter` ONLY inside
+  `if !out.Allowed` and never reads `res.RetryAfter` on the allow path (raw
+  mapping would leak `-1` and break the contract; this is a required correction,
+  not polish). `Limit = limit.Burst` (GCRA instantaneous-burst projection, NOT a
+  fixed-window quota, NOT `res.Limit`); `Remaining = res.Remaining` (≤ Burst so
+  `Remaining ≤ Limit`); **`ResetAt` absent** (a `now + ResetAfter` projection is
+  client-clock-skew-prone; deferred to an explicit clock option if a middleware
+  consumer needs the header).
+- **Backend error mapping:** ctx errors (`Canceled`/`DeadlineExceeded`) returned
+  verbatim; otherwise `errorsx.Wrap(classifyBackendErr(err), ...)` whose `CodeOf`
+  is **never `CodeUnknown`** (net.Error or reachability substring →
+  `CodeUnavailable`; else `CodeInternal`). `classifyBackendErr` is a deliberate
+  per-adapter copy of `jobs/asynq`'s (the repo does not share one classifier).
+- **Verified facts (final review):** redis_rate internally prepends its own
+  constant `rate:` prefix to the key — composes injectively with the adapter's
+  prefix-free encoding. `redis_rate.Allow` never returns `(nil, nil)` (nil
+  result only with a non-nil error) → no NPE risk in `mapResult`. Cluster/Ring:
+  every redis_rate op is single-key so it stays in one hash slot by construction
+  (API-derived claim; CI exercises single-node `redis:7-alpine`).
+- **Tests:** core's `ratelimittest.RunContract` (deterministic profile
+  `Limit{Rate:1,Burst:1,Period:1h}`) against testcontainers Redis, with a
+  **per-factory unique namespace** — `WithKeyPrefix("ratelimittest:"+t.Name()+
+  ":"+atomicCounter)`. The atomic counter (not `t.Name()` alone, not the long
+  Period) is what isolates state across factory calls: `RunContract` reuses
+  fixed keys `:a`/`:b` and `TestMain` boots the container once, so under
+  `-count>1`/`-race` reruns `t.Name()` repeats and would collide. Plus
+  adapter-level integration (unavailable → `CodeUnavailable`, recovery after
+  refill, prefix isolation) and white-box unit tests (key injectivity, guards,
+  mapResult incl. the `-1` correction + Limit-source pinning, error mapping,
+  Allow no-backend precedence).
+- **Scope-out:** HTTP enforcement middleware (429 + quota headers) and
+  `examples/orders` wiring are deferred siblings (adapter-first split, mirrors
+  AuthZ/idempotency/jobs). Outbound quota / blocking Wait/Reserve / AllowN-cost
+  were deferred at the core contract level (no inbound consumer evidence).

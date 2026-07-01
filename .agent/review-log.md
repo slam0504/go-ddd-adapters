@@ -1,6 +1,7 @@
 # go-ddd-adapters Review Log
 
-Last verified: 2026-05-20 Asia/Taipei (post PR #14 merge at `2e9e96d`)
+Last verified: 2026-07-01 Asia/Taipei (post PR #31 merge at `e41d80a` —
+`ratelimit/redisrate` impl cycle findings recorded below)
 
 ## Recent Findings
 
@@ -145,6 +146,45 @@ Last verified: 2026-05-20 Asia/Taipei (post PR #14 merge at `2e9e96d`)
   the release from the exact commit content the impl PR was developed and
   conformance-tested against.
 
+- **`ratelimit/redisrate` (PR #31, merge `e41d80a`, 2026-07-01)**: built via
+  writing-plans → subagent-driven-development (9 TDD tasks, fresh
+  implementer + task-reviewer each, opus final whole-branch review). Findings
+  resolved in-band:
+  - **Task 6 (Important, real)** — `TestClassifyBackendErr`'s `net.Error` case
+    used `&net.OpError{Err: errors.New("connection refused")}`, whose `.Error()`
+    string also hits the reachability-substring branch, so the case did not
+    independently prove the `errors.As(net.Error)` path (deleting that branch
+    would still pass). Fixed by swapping the inner error to
+    `errors.New("transport failure")` (in none of the substrings), isolating the
+    net.Error path; the separate string-path case keeps a real reachability
+    substring (`045d39b`).
+  - **Task 8 (Important, REJECTED as false positive)** — a per-task reviewer
+    flagged `first.RetryAfter != 0` (on an ALLOWED result) as fragile against a
+    hypothetical sub-ms redis_rate value. Rejected + independently confirmed by
+    the opus final review: `first` is the core `ratelimit.Result` from
+    `mapResult`, which on the allow path NEVER reads `res.RetryAfter` (assigns
+    only inside `if !out.Allowed`), so an allowed `RetryAfter` is structurally
+    exactly 0 — the assertion is a valid end-to-end guard of the -1 correction,
+    not fragile. No change.
+  - **Final review (opus) — 2 test-hardening fixes applied (`ee5af73`)**:
+    `TestNewValid` now asserts `l.limiter != nil` and `l.limit == validLimit`
+    (load-bearing fields); `TestMapResultDenied` now uses a divergent
+    `res.Limit.Burst` (99) vs the `limit` param Burst (1) and asserts
+    `got.Limit == 1`, pinning that `Limit` is sourced from the param, not
+    `res.Limit`. Verified facts recorded: redis_rate prepends its own constant
+    `rate:` prefix (composes injectively with the adapter's prefix-free
+    encoding); `redis_rate.Allow` never returns `(nil, nil)` → no NPE in
+    `mapResult`.
+  - **P3 (peer/Codex review, post-push)** — `.agent/state.md` handoff block was
+    stale ("Next: writing-plans → TDD impl") after impl was done; updated to
+    reflect PR #31 open then merged (`2cad0a8` on the branch; further merged-state
+    sync in this bookkeeping pass). No code-level blockers found by that review.
+  - CI 5/5 green on PR #31 (build+test, both golangci-lint, integration
+    testcontainers vs `redis:7-alpine`). The recurring `local-prefixes`
+    import-group class (v0.4.0 `7e2a096`, v0.7.0 `a7ca011`) did NOT recur —
+    files were grouped correctly from the first push and both lint legs passed.
+
 ## Current Open Review Items
 
-- None.
+- None. (`ratelimit/redisrate` impl PR merged; tag-gate steps 2–4 pending but
+  carry no open review findings.)
