@@ -96,3 +96,21 @@ func TestNegativeTTLRejected(t *testing.T) {
 		t.Fatalf("Set(ttl<0) CodeOf = %v, want CodeInvalidArgument", errorsx.CodeOf(err))
 	}
 }
+
+// TestHealthCheck_Ping verifies the exported probe against a live container:
+// nil on healthy PING, non-nil under a cancelled ctx (deterministic error
+// path — no container stop needed).
+func TestHealthCheck_Ping(t *testing.T) {
+	c, err := rediscache.New(testClient, rediscache.WithKeyPrefix(nextPrefix("health")))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := c.HealthCheck("").Check(context.Background()); err != nil {
+		t.Fatalf("Check on live container: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := c.HealthCheck("").Check(ctx); err == nil {
+		t.Fatal("Check with cancelled ctx: want non-nil error, got nil")
+	}
+}

@@ -118,7 +118,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 | `idempotency/redis` | `idempotency.Store` | [go-redis v9][goredis]; atomic single-key Lua reserve/finish/cancel, `crypto/rand` lease-token ownership, `PEXPIRE`-based reclaim, configurable lease TTL + completed-record retention (see the Redis-version note under [Compatibility matrix](#compatibility-matrix) for the cluster/ring caveat) |
 | `jobs/asynq` | `jobs.Enqueuer` / `jobs.Worker` | [hibiken/asynq][asynq] v0.24.1 (Redis-backed); exact-type-match dispatch, 30-day default scheduling horizon, at-least-once delivery with retry→archive; `WithQueue` / `WithSchedulingHorizon` / `WithRetention` / `WithMaxRetry` / `WithRetryDelay` / `WithTaskTimeout` / `WithConcurrency` / `WithShutdownTimeout` / `WithLogger`. Redis 4.0+ |
 | `ratelimit/redisrate` | `ratelimit.Limiter` | [go-redis/redis_rate v10][redisrate] (GCRA, Redis-backed); distributed inbound limiter, denial-is-data (never `CodeRateLimited`), `RetryAfter`-zero-on-allow, prefix-free length-encoded keys, GCRA-burst `Limit`/`Remaining` projection, `ResetAt` absent; `WithKeyPrefix` only. Redis 3.2+ |
-| `cache/redis` | `cache.Cache` | go-redis v9 (`redis.Cmdable`); prefix-free key, `redis.Nil`→`ErrMiss`, `WithKeyPrefix`, ttl==0 no-expiry / ttl<0 rejected, coded backend errors (never `CodeUnknown`). Redis any version |
+| `cache/redis` | `cache.Cache` | go-redis v9 (`redis.Cmdable`); prefix-free key, `redis.Nil`→`ErrMiss`, `WithKeyPrefix`, ttl==0 no-expiry / ttl<0 rejected, coded backend errors (never `CodeUnknown`); `HealthCheck` exports a PING-based core `health.Check`. Redis any version |
 | `logger/slogger` | `logger.Logger` | `log/slog` (stdlib) |
 | `observability/otel` | `observability.Provider` | OpenTelemetry SDK v1.32 |
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `cache/redis`: `(*Cache).HealthCheck(name)` exports a PING-based core
+  `ports/health.Check` (empty name defaults to `"cache-redis"`). Closes one
+  deferred item from the cache/redis spec §10.
+
 ## [v0.11.0] - 2026-07-02
 
 ### Added
