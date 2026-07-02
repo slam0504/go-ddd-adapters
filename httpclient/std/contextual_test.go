@@ -25,6 +25,7 @@ func TestContextual_AttachesContext(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	req, err := http.NewRequest(http.MethodGet, srv.URL, nil) // deliberately no ctx
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)

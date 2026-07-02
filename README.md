@@ -9,7 +9,7 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.12.0` adds the HTTP client adapter. The `httpclient/std` adapter
+`v0.12.0` is the latest tagged release — the outbound HTTP slice. The `httpclient/std` adapter
 is the first concrete consumer of core's `ports/httpclient` contract,
 wrapping `*net/http.Client` with stdlib-parity defaults (no client-level
 timeout, no tracing) and opt-in explicit-provider OTel tracing via
@@ -17,7 +17,7 @@ timeout, no tracing) and opt-in explicit-provider OTel tracing via
 dep-bump PR; adapter tags `v0.12.0` at merge. The same release gives the
 `cache/redis` adapter a `HealthCheck` export (a PING-based core `health.Check`).
 
-`v0.11.0` is the latest tagged release — the cache slice. The
+`v0.11.0` adds the cache slice. The
 `cache/redis` adapter implements core's `cache.Cache` over go-redis v9
 (`redis.Cmdable`). Key design: prefix-free length-encoded key encoding so a
 client-supplied key cannot collide with another namespace; `redis.Nil` maps to
