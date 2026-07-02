@@ -1,20 +1,64 @@
 # go-ddd-adapters State
 
-Last verified: 2026-07-01 Asia/Taipei (on `main` `82748cd` — `ratelimit/redisrate`
-cycle CLOSED + tagged). Source: `git log main --oneline` head is `82748cd`
-(`Merge pull request #32 from slam0504/chore/bump-core-v0.10.0`). Adapter
-**`v0.10.0`** annotated tag at `82748cd`, pushed; GitHub Release Latest
-(`gh api releases/latest` → `v0.10.0`, draft:false prerelease:false, named
-"v0.10.0 — ratelimit/redisrate adapter"). Both `go.mod` files require
-`go-ddd-core v0.10.0` (core tagged, `go mod verify` all modules OK);
-`go list -m go-ddd-adapters@v0.10.0` resolves via proxy. All four tag-gate
-steps done (impl PR #31 `e41d80a` → core `v0.10.0` → dep-bump PR #32 `82748cd`
-→ adapter `v0.10.0` tag + Release). `v0.10.0` is now the latest RELEASED adapter
-tag (supersedes `v0.9.0` `040228b`). Verification this session: root
-build/vet/`go test ./...` + `examples/orders` build/vet green, golangci-lint
-`./...` and `--build-tags=integration` 0 issues (v2 binary); PR #31 and #32 CI
-both 5/5 green incl. `integration (testcontainers)` (Docker unavailable locally,
-so the integration RUN was CI-only).
+Last verified: 2026-07-02 Asia/Taipei (on `main` `050a99a` — `cache/redis`
+cycle CLOSED + tagged). Source: `git log main --oneline` head is `050a99a`
+(`Merge pull request #34 from slam0504/chore/bump-core-v0.12.0`). Adapter
+**`v0.11.0`** annotated tag at `050a99a`, pushed; GitHub Release Latest
+(draft:false prerelease:false). Both `go.mod` files require
+`go-ddd-core v0.12.0`; `go list -m go-ddd-adapters@v0.11.0` resolves via proxy.
+All four tag-gate steps done (impl PR #33 `2c10eba` → core `v0.12.0` → dep-bump
+PR #34 `050a99a` → adapter `v0.11.0` tag + Release). `v0.11.0` is now the latest
+RELEASED adapter tag (supersedes `v0.10.0` `82748cd`). Cross-repo version
+alignment DROPPED this cycle (user decision) — adapter `v0.11.0` / core
+`v0.12.0` intentionally differ; see v0.11.0 section below for the incident that
+drove this.
+
+## v0.11.0 cache/redis cycle (CLOSED — shipped + tagged 2026-07-02)
+
+First consumer of core's `ports/cache` contract. Adapter `v0.11.0` annotated
+tag at dep-bump merge `050a99a` (PR #34), GitHub Release Latest. Core required
+at `v0.12.0` (core PR #34, merge `12714d0`). Cross-repo version alignment
+dropped this cycle (see Incident below).
+
+**Incident + retarget**: a concurrent core-agent session released core `v0.11.0`
+(jobstest delivery/timing suite; core PRs #30/#31; tag @ `38b4470`) from a
+branch cut off `feat/cache-maturation`, sweeping the cache cycle's Task A1
+commit `579d6a9` (BREAKING: `ports/cache.TypedCache[T]` deleted + Cache godoc
+tightened) into core v0.11.0 UNRECORDED. Remediation: core docs PR #32 (merge
+`21aa6f4`) corrected CHANGELOG [0.11.0] + GitHub Release notes. User decision:
+core's cache-cycle tag retargeted to **v0.12.0**; adapters release stays
+**v0.11.0** (its own next number). Content-identity verified via GitHub compare
+API (`128d9eb...v0.12.0` differs only in CHANGELOG/.agent — no `.go` files).
+Source: verified 2026-07-02 Asia/Taipei. Expiry: update at next release/tag.
+
+**Core side (v0.12.0)**:
+- cachetest PR #33 (merge `128d9eb`): `ports/cache/cachetest` —
+  `RunContract(t, Factory)`, 15 deterministic subtests incl. 2 byte-ownership
+  aliasing invariants, empty-key/negative-TTL precedence,
+  empty-key-precedes-cancelled-ctx + pre-expired-deadline (added at Phase A
+  final review); reference in-memory impl; non-vacuity proven dev-time via 8
+  temporary breakages.
+- Release-prep PR #34 (merge `12714d0`) → annotated tag `v0.12.0` @ `12714d0`,
+  GitHub Release Latest.
+
+**Adapters side (v0.11.0)**:
+- Impl PR #33 (merge `2c10eba`): `cache/redis` (`rediscache`) — first
+  `ports/cache` consumer; go-redis v9 `redis.Cmdable`; prefix-free
+  length-encoded key; `redis.Nil`→`cache.ErrMiss`; `WithKeyPrefix` (default
+  "cache"); ttl==0 no-expiry / ttl<0 `CodeInvalidArgument` pre-backend; ctx
+  verbatim; backend errors coded never `CodeUnknown`; nil + typed-nil guard (3
+  concrete types). Merged at core pseudo-pin
+  `v0.11.1-0.20260702035204-128d9eb1932a`; CI 5/5 green incl. integration
+  (testcontainers) running `cachetest.RunContract` vs `redis:7-alpine`.
+- Dep-bump PR #34 (merge `050a99a`, commit `d2dfdb7`): core pseudo → `v0.12.0`
+  (root + examples/orders); CHANGELOG `[Unreleased]`→`[v0.11.0] - 2026-07-02` +
+  compare links; README compat row.
+- Reviews: per-task spec+quality reviews all Approved (subagent-driven-development);
+  Phase A final review (opus) Critical 0 / Important 0, 2 adopted coverage fixes
+  (`234eb1f`); whole-branch final review (opus) Critical 0 / Important 0, all 15
+  suite invariants verified. Spec/plan:
+  `docs/superpowers/{specs,plans}/2026-07-01-cache-redis-adapter*`.
+- Branches deleted (local+remote): `feat/cache-redis`, `chore/bump-core-v0.12.0`.
 
 ## v0.6.0 AuthN cycle (CLOSED — shipped + tagged 2026-06-05)
 

@@ -184,7 +184,29 @@ Last verified: 2026-07-01 Asia/Taipei (post PR #31 merge at `e41d80a` —
     import-group class (v0.4.0 `7e2a096`, v0.7.0 `a7ca011`) did NOT recur —
     files were grouped correctly from the first push and both lint legs passed.
 
+- **`cache/redis` (PR #33, merge `2c10eba`, 2026-07-02)**: built via
+  subagent-driven-development (Tasks A1–A2 + B1–B5 = 6 impl tasks + fix
+  re-reviews). Findings resolved in-band:
+  - **Per-task reviews — all Approved.** No Critical/Important findings carried
+    over across tasks; each task reviewer signed off before the next task started.
+  - **Phase A final review (opus) — 2 coverage fixes adopted (`234eb1f`)**:
+    (a) `empty-key-precedes-cancelled-ctx` subtest added — proves empty-key
+    guard fires before ctx check even when ctx is already cancelled; (b)
+    `pre-expired-deadline` subtest added — proves ctx check fires before backend
+    even when the context deadline is already past at call time. Both are
+    deterministic (no waits). Critical 0 / Important 0.
+  - **Whole-branch final review (opus) — Critical 0 / Important 0.** Triage:
+    (a) aliasing/byte-ownership invariants: confirmed by cachetest subtests 14+15;
+    (b) go-redis KeepTTL sentinel: confirmed the adapter does NOT use
+    `go-redis v9 KeepTTL=-1` (ttl==0 path uses `Set` with 0 duration, not
+    `KeepTTL`); (c) all 15 suite invariants verified against source.
+    Accepted minors recorded in `.superpowers/sdd/progress.md`.
+  - The recurring `local-prefixes` import-group class (v0.4.0 `7e2a096`, v0.7.0
+    `a7ca011`) did NOT recur — CI `golangci-lint (.)` passed on first push.
+  - CI 5/5 green on PR #33 (build+test, both golangci-lint, integration
+    testcontainers vs `redis:7-alpine`).
+
 ## Current Open Review Items
 
-- None. (`ratelimit/redisrate` impl PR merged; tag-gate steps 2–4 pending but
-  carry no open review findings.)
+- None. (`cache/redis` impl + dep-bump merged; adapter `v0.11.0` tagged + GitHub
+  Release Latest. No open review findings.)

@@ -1033,3 +1033,51 @@ dep-bump PR (tag-gate steps 2–4). Spec/plan under
   `examples/orders` wiring are deferred siblings (adapter-first split, mirrors
   AuthZ/idempotency/jobs). Outbound quota / blocking Wait/Reserve / AllowN-cost
   were deferred at the core contract level (no inbound consumer evidence).
+
+## cache/redis adapter (2026-07-02 cycle)
+
+First consumer of core's `ports/cache` contract. New package `cache/redis`
+(`rediscache`). Shipped via impl PR #33 (merge `2c10eba`) at the core
+pseudo-version pin; adapter release tag at dep-bump PR #34 (merge `050a99a`).
+Spec/plan under `docs/superpowers/{specs,plans}/2026-07-01-cache-redis-adapter*`.
+
+**Cross-repo version alignment dropped (user decision, 2026-07-02)**: a
+concurrent core-agent session released core `v0.11.0` (jobstest delivery/timing
+suite) from a branch that included the cache cycle's Task A1 commit (`579d6a9`
+— BREAKING: `ports/cache.TypedCache[T]` deleted + Cache godoc tightened),
+sweeping it in UNRECORDED. Core docs PR #32 (merge `21aa6f4`) corrected the
+CHANGELOG [0.11.0] + GitHub Release notes. User retargeted the cache cycle's
+core tag to **v0.12.0** (next available minor), and the adapters release stays
+**v0.11.0** (its own next number). Version numbers deliberately differ from this
+cycle onward; alignment is not a requirement.
+
+**Content-identity check (replaces go.sum hash check used in prior cycles)**:
+GitHub compare API (`128d9eb...v0.12.0`) confirmed zero `.go` file diffs between
+the cachetest PR merge and the `v0.12.0` tag — CHANGELOG and `.agent/` only.
+This check is now the standard verification that the tag content equals the
+pseudo-version content for any cycle where intervening commits exist.
+
+- **`redis.Cmdable` over concrete `*redis.Client`.** Broadest interface
+  satisfying `Get`/`Set`/`Del`; accepted by `*redis.Client`, `*redis.ClusterClient`,
+  `*redis.Ring`, pipeline/tx. Typed-nil guard via explicit type switch on the three
+  concrete go-redis types; nil interface → `ErrNilClient`.
+- **Prefix-free length-encoded key.** `encode(keyPrefix, key) =
+  fmt.Sprintf("%d:%s:%s", len(keyPrefix), keyPrefix, key)`. Same injectivity
+  discipline as `idempotency/redis` (P1, 2026-06-09) and `ratelimit/redisrate`
+  (P1, 2026-06-30). `WithKeyPrefix` defaults to `"cache"` (non-empty).
+- **`redis.Nil`→`cache.ErrMiss`.** The only redis-layer sentinel mapped to a
+  core sentinel; all other errors coded never `CodeUnknown`
+  (`CodeUnavailable` / `CodeInternal`).
+- **TTL semantics:** ttl==0 → no expiry (`Persist`-semantic; go-redis
+  `KeepTTL(-1)` is NOT used — blocks that sentinel from leaking); ttl<0 →
+  `CodeInvalidArgument` rejected pre-backend.
+- **Nil + empty-value guard.** `nil []byte` store is valid (Set with nil);
+  `Get` returns the stored bytes verbatim — callers bear ownership; cachetest
+  aliasing invariants confirmed this in the suite.
+- **Tag at dep-bump merge.** Adapter `v0.11.0` annotated at `050a99a` (PR #34),
+  so the tagged tree pins core at released `v0.12.0`, never a pseudo-version.
+  Mirrors v0.6.0–v0.10.0 precedent.
+- **Tag-gate CLOSED (2026-07-02):** all 4 steps done — impl PR #33 merged
+  (`2c10eba`) at the pseudo-pin, CI 5/5 green; core `v0.12.0` tagged
+  (`12714d0`); adapter dep-bump PR #34 merged CI 5/5 (`050a99a`); adapter
+  `v0.11.0` annotated at `050a99a` + pushed + GitHub Release Latest.
