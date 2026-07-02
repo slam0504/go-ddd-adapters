@@ -3,7 +3,8 @@
 - **Status**: ACCEPTED 2026-07-01 — plan handoff
 - **Date**: 2026-07-01 (Asia/Taipei)
 - **Branch**: TBD (likely `feat/cache-redis`)
-- **Target release**: `v0.11.0` on **both** repos (see Tag-gate below)
+- **Target release**: core `v0.12.0` / adapters `v0.11.0` (cross-repo alignment
+  dropped; see Addendum 2026-07-02 and Tag-gate below)
 - **Four-quadrant slot**: B. Adapter selection — first concrete driver for
   core's `ports/cache.Cache`. Unlike ratelimit/jobs/idempotency (where core had
   already shipped a mature contract + conformance suite), `ports/cache` is a
@@ -272,18 +273,21 @@ suite later grows complex or a vacuous regression actually occurs.
 - CI: a dedicated `cache/redis` integration step (mirrors jobs/asynq and
   ratelimit having their own integration legs).
 
-## 7. Tag-gate flow (both repos → `v0.11.0`)
+## 7. Tag-gate flow (core `v0.12.0` / adapters `v0.11.0`)
 
 Full contract-first / tag-at-last-piece gate (has core changes):
 
-1. **core PR**: delete `TypedCache[T]` + add `ports/cache/cachetest` + godoc
-   tightening → merge to core `main`, **left untagged**.
-2. **adapter PR**: `cache/redis`, pinning core at a **pseudo-version** of the
-   core-PR merge; CI runs `cachetest.RunContract` green under the pin → merge.
-3. **core tag `v0.11.0`** (publishes the matured `ports/cache` + `cachetest`);
-   verify resolvable via proxy.
-4. **adapter dep-bump PR**: core pseudo → `v0.11.0` on root + `examples/orders`.
-5. **adapter tag `v0.11.0`** at the dep-bump merge + GitHub Release Latest.
+1. **core docs PR**: fix core `v0.11.0` CHANGELOG/release notes to record the
+   `TypedCache[T]` removal (swept in unrecorded; see Addendum 2026-07-02).
+2. **core cachetest PR**: `ports/cache/cachetest` merges to core `main`
+   **UNTAGGED** (Task A1 already on `main`; the PR carries only the cachetest
+   commit); its merge commit is the pseudo-version Phase B pins.
+3. **adapter PR**: `cache/redis`, pinning core at a **pseudo-version** of the
+   cachetest-PR merge; CI runs `cachetest.RunContract` green under the pin → merge.
+4. **core tag `v0.12.0`** (publishes `ports/cache/cachetest`); verify resolvable
+   via proxy.
+5. **adapter dep-bump PR**: core pseudo → `v0.12.0` on root + `examples/orders`.
+6. **adapter tag `v0.11.0`** at the dep-bump merge + GitHub Release Latest.
 
 ## 8. Verification strategy
 
@@ -296,7 +300,7 @@ Full contract-first / tag-at-last-piece gate (has core changes):
   every prior Redis cycle) — state that honestly, do not claim a local
   integration pass.
 - cachetest non-vacuity: dev-time red proof (§5.5), recorded in the plan.
-- go.sum/go.mod hash byte-identical pseudo → `v0.11.0` check at the dep-bump
+- go.sum/go.mod hash byte-identical pseudo → `v0.12.0` check at the dep-bump
   (proves core tagged the exact content the adapter was conformance-tested
   against).
 
@@ -329,3 +333,28 @@ Full contract-first / tag-at-last-piece gate (has core changes):
   a `ports/cache` "maturity cycle" as a standalone effort (F7 rejected).
 - `cache/ristretto` L1, `cache/redis` health.Check export, `httpclient/std`,
   `storage/*`, `database/sql|mongo`, `transport/grpc|graphql`.
+
+## 11. Addendum 2026-07-02 — version retarget
+
+**Incident:** A concurrent core-agent session released core `v0.11.0` today
+(jobstest delivery suite, tagged at `38b4470`). That session branched from
+`feat/cache-maturation` before the `cachetest` commit, so it accidentally swept
+in Task A1's content (`TypedCache[T]` deletion + `ports/cache` godoc tightening,
+commit `579d6a9`) and shipped it in core `v0.11.0` unrecorded in the CHANGELOG.
+
+**What is already on core main / v0.11.0:**
+- Task A1 is SHIPPED (TypedCache[T] deleted, godoc tightened) — it is live in core `v0.11.0`.
+- Task A2 (`ports/cache/cachetest`) is NOT yet in any core tag; it exists only on
+  `feat/cache-maturation` and is the content of the upcoming core cachetest PR.
+
+**User decision (2026-07-02):**
+- Core's cache-maturation tag becomes **`v0.12.0`** (not v0.11.0 as originally
+  planned); cross-repo version alignment is dropped for this cycle.
+- Adapters' cache/redis release stays **`v0.11.0`** (adapters' own next number).
+- A core docs PR is added as new gate step 1 to fix the core `v0.11.0` CHANGELOG
+  (recording the TypedCache removal that was swept in unrecorded).
+- The core cachetest PR (Task A2 only) merges untagged; core tags `v0.12.0` after
+  the adapter PR merges at the cachetest pseudo-version.
+
+**Impact on this spec:** §6 (header), §7 (Tag-gate flow), and §8 (verification)
+updated in-place above to reflect the 6-step retargeted gate.

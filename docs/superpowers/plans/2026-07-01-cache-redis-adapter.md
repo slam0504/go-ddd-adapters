@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship `cache/redis`, the first concrete adapter for core's `ports/cache.Cache`, folding a scoped `ports/cache` maturation (delete `TypedCache[T]`, add `cachetest` conformance suite, tighten godoc) into the same tag-gated cycle → `v0.11.0` on both repos.
+**Goal:** Ship `cache/redis`, the first concrete adapter for core's `ports/cache.Cache`, folding a scoped `ports/cache` maturation (delete `TypedCache[T]`, add `cachetest` conformance suite, tighten godoc) into the same tag-gated cycle → core `v0.12.0` / adapters `v0.11.0` (cross-repo alignment dropped; see Addendum 2026-07-02 in the spec).
 
-**Architecture:** Two repos, one cycle. Phase A changes `go-ddd-core` (`ports/cache` godoc + `cachetest` suite). Phase B builds the `go-ddd-adapters` `cache/redis` driver against a pseudo-version pin of the merged core PR, running core's `cachetest.RunContract` as the primary conformance proof. Phase C runs the contract-first / tag-at-last-piece gate to `v0.11.0`. Same shape as idempotency (v0.8.0), jobs (v0.9.0), ratelimit (v0.10.0).
+**Architecture:** Two repos, one cycle. Phase A changes `go-ddd-core` (`ports/cache` godoc + `cachetest` suite). Phase B builds the `go-ddd-adapters` `cache/redis` driver against a pseudo-version pin of the merged core PR, running core's `cachetest.RunContract` as the primary conformance proof. Phase C runs the contract-first / tag-at-last-piece gate to core `v0.12.0` / adapters `v0.11.0`. Same shape as idempotency (v0.8.0), jobs (v0.9.0), ratelimit (v0.10.0).
 
 **Tech Stack:** Go 1.25; `github.com/redis/go-redis/v9 v9.20.0` (already a repo dependency); `github.com/slam0504/go-ddd-core` (`ports/cache`, `ports/cache/cachetest`, `pkg/errorsx`); testcontainers Redis via `internal/redistest`.
 
@@ -29,6 +29,8 @@
 # Phase A — Core (`go-ddd-core`)
 
 > Work in the core repo: `/Users/eason_tseng/playground/project/go-ddd-core`, on a new branch `feat/cache-maturation` off `main`. Phase A ships as its own core PR, merged UNTAGGED. Its merge commit is the pseudo-version Phase B pins.
+>
+> **Addendum 2026-07-02:** Task A1 (TypedCache[T] deletion + godoc tightening) was already swept into core `v0.11.0` by a concurrent session. Task A1 is DONE — skip its steps. The core PR for this phase now carries **only Task A2's cachetest commit** (`a116ecd`). Task A2 below is the active work.
 
 ### Task A1: Delete `TypedCache[T]` + tighten `ports/cache` godoc
 
@@ -1127,7 +1129,7 @@ Under `## [Unreleased]`, add (matching existing bullet style):
 
 ### Changed
 - Bumped `go-ddd-core` to the `ports/cache` maturation (pseudo-version pending
-  the core `v0.11.0` tag; see the dep-bump entry at release).
+  the core `v0.12.0` tag; see the dep-bump entry at release).
 
 ### Removed
 - **BREAKING (core):** `ports/cache.TypedCache[T]` deleted (dangling generic,
@@ -1176,7 +1178,7 @@ git commit -F - <<'EOF'
 docs(cache/redis): CHANGELOG + README + CI integration leg
 
 Pins go-ddd-core at the ports/cache maturation pseudo-version; adds the
-cache/redis integration step. Release framing (pseudo -> v0.11.0) lands in the
+cache/redis integration step. Release framing (pseudo -> v0.12.0) lands in the
 dep-bump PR per the tag-at-last-piece convention.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
@@ -1187,11 +1189,11 @@ Push `feat/cache-redis` and open the adapter PR. CI must be 5/5 green (incl. `in
 
 ---
 
-# Phase C — Tag-gate to `v0.11.0`
+# Phase C — Tag-gate to core `v0.12.0` / adapters `v0.11.0`
 
-> External dependency: after Phase B's adapter PR merges green at the pseudo-pin, the core agent tags core `v0.11.0` (publishing the matured `ports/cache` + `cachetest`). Verify resolvable via proxy: `go list -m github.com/slam0504/go-ddd-core@v0.11.0`.
+> External dependency: after Phase B's adapter PR merges green at the pseudo-pin, the core agent tags core `v0.12.0` (publishing `ports/cache/cachetest`). Verify resolvable via proxy: `go list -m github.com/slam0504/go-ddd-core@v0.12.0`.
 
-### Task C1: Adapter dep-bump to `v0.11.0`
+### Task C1: Adapter dep-bump to core `v0.12.0`
 
 **Files:** Modify `go.mod`/`go.sum` (root + `examples/orders`); `CHANGELOG.md`; `README.md`.
 
@@ -1199,13 +1201,13 @@ Push `feat/cache-redis` and open the adapter PR. CI must be 5/5 green (incl. `in
 
 Run (root, then `examples/orders`):
 ```bash
-go get github.com/slam0504/go-ddd-core@v0.11.0
+go get github.com/slam0504/go-ddd-core@v0.12.0
 go mod tidy
 ```
 
 - [ ] **Step 2: Verify pseudo→tag content identity**
 
-Run: `git diff go.sum` and confirm the `go-ddd-core` `/go.mod` + module hashes are byte-identical between the pseudo-version and `v0.11.0` (proves core tagged the exact content the adapter was conformance-tested against).
+Run: `git diff go.sum` and confirm the `go-ddd-core` `/go.mod` + module hashes are byte-identical between the pseudo-version and `v0.12.0` (proves core tagged the exact content the adapter was conformance-tested against).
 
 - [ ] **Step 3: Finalize CHANGELOG + README for the release**
 
@@ -1214,7 +1216,7 @@ Move the `[Unreleased]` cache block into `## [v0.11.0] - 2026-07-01`; fix compar
 - [ ] **Step 4: Verify + commit + PR**
 
 Run: `go build ./... && go test ./... && /usr/local/bin/golangci-lint run ./...`
-Expected: clean. Commit (`chore(deps): bump go-ddd-core to v0.11.0`), open the dep-bump PR, ensure CI 5/5 green, merge.
+Expected: clean. Commit (`chore(deps): bump go-ddd-core to v0.12.0`), open the dep-bump PR, ensure CI 5/5 green, merge.
 
 - [ ] **Step 5: Tag + Release**
 
