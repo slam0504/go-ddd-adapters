@@ -221,6 +221,15 @@ HTTP status.
   validation failure). Ordered after empty-key, before ctx.
 - **pre-cancelled ctx**: a ctx cancelled at entry → matching ctx error, no
   backend mutation. (Ordered after the two class-1 validations.)
+- **empty-key precedes cancelled ctx** (added at Phase A final review): calling
+  any method with `""` key AND a pre-cancelled ctx must return
+  `CodeInvalidArgument`, NOT `context.Canceled` — empty-key validation fires
+  before ctx is ever observed. Covered by `cachetest` subtest
+  `EmptyKeyPrecedesCancelledCtx`.
+- **pre-expired-deadline variant** (added at Phase A final review): a ctx whose
+  deadline has already passed (`time.Now().Add(-time.Hour)`) must return
+  `context.DeadlineExceeded`, mirroring the pre-cancelled behaviour. Covered by
+  `cachetest` subtest `PreExpiredCtxReturnsCtxError`.
 
 ### 5.3 Byte-ownership invariants (NEW — data-correctness contract)
 
