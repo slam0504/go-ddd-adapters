@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `cache/redis` (`rediscache`): first adapter for core `ports/cache.Cache` —
+  go-redis v9, prefix-free length-encoded key, `redis.Nil`→`cache.ErrMiss`,
+  `WithKeyPrefix`, ttl==0 no-expiry / ttl<0 rejected, coded backend errors.
+- `ports/cache` matured (via go-ddd-core): `cachetest.RunContract` conformance
+  suite consumed by this adapter.
+
+### Changed
+- Bumped `go-ddd-core` to the `ports/cache` maturation (pseudo-version pending
+  the core `v0.12.0` tag; see the dep-bump entry at release).
+
+### Removed
+- **BREAKING (core):** `ports/cache.TypedCache[T]` deleted (dangling generic,
+  no consumers).
+
 ## [v0.10.0] - 2026-07-01
 
 ### Added
