@@ -14,8 +14,8 @@ is the first concrete consumer of core's `ports/httpclient` contract,
 wrapping `*net/http.Client` with stdlib-parity defaults (no client-level
 timeout, no tracing) and opt-in explicit-provider OTel tracing via
 `WithTracing(tp)`. Port published since core v0.1.0, so no core tag or
-dep-bump PR; adapter tags `v0.12.0` at merge. Same release brings
-`cache/redis` maturation with `HealthCheck` (core v0.12.0 gained the method).
+dep-bump PR; adapter tags `v0.12.0` at merge. The same release gives the
+`cache/redis` adapter a `HealthCheck` export (a PING-based core `health.Check`).
 
 `v0.11.0` is the latest tagged release — the cache slice. The
 `cache/redis` adapter implements core's `cache.Cache` over go-redis v9
