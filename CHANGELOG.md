@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.12.0] - 2026-07-02
+
 ### Added
+- `httpclient/std` (`stdhttp`): first adapter for core `ports/httpclient` —
+  wraps `*net/http.Client` with stdlib-parity defaults (timeout 0, no
+  tracing); `WithTimeout` / `WithTransport` / `WithTracing(tp)` (explicit
+  provider injection, no otel-global fallback); `Contextual()` wrapper for
+  `ContextualClient`; stdlib error passthrough. retry / breaker deferred.
 - `cache/redis`: `(*Cache).HealthCheck(name)` exports a PING-based core
   `ports/health.Check` (empty name defaults to `"cache-redis"`). Closes one
   deferred item from the cache/redis spec §10.
@@ -447,7 +454,8 @@ are new packages or new exported symbols.
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.12.0...HEAD
+[v0.12.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.11.0...v0.12.0
 [v0.11.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.10.0...v0.11.0
 [v0.10.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.9.0...v0.10.0
 [v0.9.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.8.0...v0.9.0

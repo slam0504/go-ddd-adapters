@@ -9,7 +9,15 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.11.0` is the latest tagged release — the cache slice. The
+`v0.12.0` is the latest tagged release — the outbound HTTP slice. The `httpclient/std` adapter
+is the first concrete consumer of core's `ports/httpclient` contract,
+wrapping `*net/http.Client` with stdlib-parity defaults (no client-level
+timeout, no tracing) and opt-in explicit-provider OTel tracing via
+`WithTracing(tp)`. Port published since core v0.1.0, so no core tag or
+dep-bump PR; adapter tags `v0.12.0` at merge. The same release gives the
+`cache/redis` adapter a `HealthCheck` export (a PING-based core `health.Check`).
+
+`v0.11.0` adds the cache slice. The
 `cache/redis` adapter implements core's `cache.Cache` over go-redis v9
 (`redis.Cmdable`). Key design: prefix-free length-encoded key encoding so a
 client-supplied key cannot collide with another namespace; `redis.Nil` maps to
@@ -117,6 +125,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 | `auth/casbin` | `auth.Authorizer` | [Casbin v3][casbin]; wraps a caller-built enforcer behind a one-method `Enforcer` interface (`*casbin.Enforcer` / `*casbin.SyncedEnforcer`), default `(sub, obj, act)` request builder with `Type:ID` object encoding, overridable via `WithRequestBuilder`; deny -> `ErrForbidden`, malformed -> `ErrInvalidAuthorizationRequest`, engine/ctx/builder errors passed through |
 | `idempotency/redis` | `idempotency.Store` | [go-redis v9][goredis]; atomic single-key Lua reserve/finish/cancel, `crypto/rand` lease-token ownership, `PEXPIRE`-based reclaim, configurable lease TTL + completed-record retention (see the Redis-version note under [Compatibility matrix](#compatibility-matrix) for the cluster/ring caveat) |
 | `jobs/asynq` | `jobs.Enqueuer` / `jobs.Worker` | [hibiken/asynq][asynq] v0.24.1 (Redis-backed); exact-type-match dispatch, 30-day default scheduling horizon, at-least-once delivery with retry→archive; `WithQueue` / `WithSchedulingHorizon` / `WithRetention` / `WithMaxRetry` / `WithRetryDelay` / `WithTaskTimeout` / `WithConcurrency` / `WithShutdownTimeout` / `WithLogger`. Redis 4.0+ |
+| `httpclient/std` | `httpclient.Client` / `ContextualClient` | stdlib `net/http.Client` wrapper; stdlib-parity defaults (no client timeout); `WithTimeout` / `WithTransport` / opt-in `WithTracing(tp)` explicit OTel provider; `Contextual()` context-first view |
 | `ratelimit/redisrate` | `ratelimit.Limiter` | [go-redis/redis_rate v10][redisrate] (GCRA, Redis-backed); distributed inbound limiter, denial-is-data (never `CodeRateLimited`), `RetryAfter`-zero-on-allow, prefix-free length-encoded keys, GCRA-burst `Limit`/`Remaining` projection, `ResetAt` absent; `WithKeyPrefix` only. Redis 3.2+ |
 | `cache/redis` | `cache.Cache` | go-redis v9 (`redis.Cmdable`); prefix-free key, `redis.Nil`→`ErrMiss`, `WithKeyPrefix`, ttl==0 no-expiry / ttl<0 rejected, coded backend errors (never `CodeUnknown`); `HealthCheck` exports a PING-based core `health.Check`. Redis any version |
 | `logger/slogger` | `logger.Logger` | `log/slog` (stdlib) |
@@ -134,6 +143,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.12.0` | `v0.12.0` | `>= 1.25` |
 | `v0.11.0` | `v0.12.0` | `>= 1.25` |
 | `v0.10.0` | `v0.10.0` | `>= 1.25` |
 | `v0.9.0` | `v0.9.0` | `>= 1.25` |
