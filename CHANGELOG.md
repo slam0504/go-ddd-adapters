@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `httpclient/std` (`stdhttp`): first adapter for core `ports/httpclient` —
+  wraps `*net/http.Client` with stdlib-parity defaults (timeout 0, no
+  tracing); `WithTimeout` / `WithTransport` / `WithTracing(tp)` (explicit
+  provider injection, no otel-global fallback); `Contextual()` wrapper for
+  `ContextualClient`; stdlib error passthrough. retry / breaker deferred.
+
 ## [v0.11.0] - 2026-07-02
 
 ### Added
