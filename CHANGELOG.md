@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.11.0] - 2026-07-02
+
 ### Added
 - `cache/redis` (`rediscache`): first adapter for core `ports/cache.Cache` —
   go-redis v9, prefix-free length-encoded key, `redis.Nil`→`cache.ErrMiss`,
@@ -15,8 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   suite consumed by this adapter.
 
 ### Changed
-- Bumped `go-ddd-core` to the `ports/cache` maturation (pseudo-version pending
-  the core `v0.12.0` tag; see the dep-bump entry at release).
+- Bumped `go-ddd-core` from pseudo-version `v0.11.1-0.20260702035204-128d9eb1932a`
+  to `v0.12.0`. The tag commit differs from the pseudo-version by one docs-only
+  release-prep commit (CHANGELOG + `.agent` files only; confirmed via
+  `gh api repos/slam0504/go-ddd-core/compare/128d9eb...v0.12.0 --jq '.files[].filename'`
+  → only `CHANGELOG.md` and `.agent/decisions.md`; no `.go` files changed).
+  Core `ports/cache`, `cachetest`, and `pkg/errorsx` content is byte-identical
+  between the two commits.
 
 ### Removed
 - **BREAKING (core):** `ports/cache.TypedCache[T]` deleted (dangling generic,
@@ -435,7 +442,8 @@ are new packages or new exported symbols.
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.11.0...HEAD
+[v0.11.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.10.0...v0.11.0
 [v0.10.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.9.0...v0.10.0
 [v0.9.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.8.0...v0.9.0
 [v0.8.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.7.0...v0.8.0

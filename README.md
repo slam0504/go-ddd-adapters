@@ -9,7 +9,7 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.11.0` (unreleased, `feat/cache-redis`) adds the cache slice. The
+`v0.11.0` is the latest tagged release — the cache slice. The
 `cache/redis` adapter implements core's `cache.Cache` over go-redis v9
 (`redis.Cmdable`). Key design: prefix-free length-encoded key encoding so a
 client-supplied key cannot collide with another namespace; `redis.Nil` maps to
@@ -19,7 +19,7 @@ contact; all backend errors are coded (never `CodeUnknown`). Configurable via
 `WithKeyPrefix`. Passes core's `cachetest.RunContract` against a real Redis via
 testcontainers. Requires `go-ddd-core v0.12.0` (`ports/cache` maturation).
 
-`v0.10.0` is the previous tagged release — the inbound rate-limiting slice. The
+`v0.10.0` adds the inbound rate-limiting slice. The
 `ratelimit/redisrate` adapter implements core's `ratelimit.Limiter` over
 [go-redis/redis_rate][redisrate] (GCRA, Redis-backed). It is a distributed
 inbound limiter: the throttling decision is data (ordinary denial is
@@ -134,6 +134,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.11.0` | `v0.12.0` | `>= 1.25` |
 | `v0.10.0` | `v0.10.0` | `>= 1.25` |
 | `v0.9.0` | `v0.9.0` | `>= 1.25` |
 | `v0.8.0` | `v0.8.0` | `>= 1.25` |
