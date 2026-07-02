@@ -1,17 +1,61 @@
 # go-ddd-adapters State
 
-Last verified: 2026-07-02 Asia/Taipei (on `main` `050a99a` — `cache/redis`
-cycle CLOSED + tagged). Source: `git log main --oneline` head is `050a99a`
-(`Merge pull request #34 from slam0504/chore/bump-core-v0.12.0`). Adapter
-**`v0.11.0`** annotated tag at `050a99a`, pushed; GitHub Release Latest
-(draft:false prerelease:false). Both `go.mod` files require
-`go-ddd-core v0.12.0`; `go list -m go-ddd-adapters@v0.11.0` resolves via proxy.
-All four tag-gate steps done (impl PR #33 `2c10eba` → core `v0.12.0` → dep-bump
-PR #34 `050a99a` → adapter `v0.11.0` tag + Release). `v0.11.0` is now the latest
-RELEASED adapter tag (supersedes `v0.10.0` `82748cd`). Cross-repo version
-alignment DROPPED this cycle (user decision) — adapter `v0.11.0` / core
-`v0.12.0` intentionally differ; see v0.11.0 section below for the incident that
-drove this.
+Last verified: 2026-07-02 Asia/Taipei (on `main` `16d517d` — `httpclient/std`
+cycle CLOSED + tagged). Source: `git log main --oneline` head is `16d517d`
+(`Merge pull request #36 from slam0504/feat/httpclient-std`). Adapter
+**`v0.12.0`** annotated tag at `16d517d`, pushed; GitHub Release Latest
+(draft:false prerelease:false; verified via `releases/latest` API). Both
+`go.mod` files require `go-ddd-core v0.12.0` (pin UNCHANGED this cycle);
+`go list -m go-ddd-adapters@v0.12.0` resolves via proxy. SIMPLIFIED gate this
+cycle (first of its kind): `ports/httpclient` was published since core v0.1.0,
+so NO core tag and NO dep-bump PR — impl PR #36 merged → adapter `v0.12.0`
+tag + Release directly. Adapter/core version coincide at v0.12.0 by accident,
+not by policy (alignment remains dropped since the v0.11.0 incident).
+
+## v0.12.0 httpclient/std cycle (CLOSED — shipped + tagged 2026-07-02)
+
+Three sequenced deliverables (spec
+`docs/superpowers/specs/2026-07-02-httpclient-std-adapter-design.md`, plan
+`docs/superpowers/plans/2026-07-02-httpclient-std-adapter.md`, both on `main`
+via PR #36):
+
+- **Part 1 — `cache/redis` HealthCheck export (adapters PR #35, merge
+  `4db36d5`)**: `(*Cache).HealthCheck(name string) health.Check` — PING-based
+  probe reusing New's validated client; empty name → `"cache-redis"`;
+  Ping errors pass through UNCODED (health contract is nil/non-nil only).
+  Unit name tests + integration probe (live PING nil / cancelled-ctx non-nil).
+  CI 5/5 green. Closed one deferred item from cache/redis spec §10.
+- **Part 2 — core `ports/httpclient` godoc PR (core PR #35, merge `5dfb68b`,
+  UNTAGGED by design)**: comment-only responsibility-boundary rewrite (ctx
+  cancellation = implementation's duty; closing resp.Body = caller's;
+  redirect/retry/timeout = adapter policy; Client/ContextualClient
+  method-name collision noted). Rides the next core release.
+- **Part 3 — `httpclient/std` (`stdhttp`) adapter (PR #36, merge `16d517d`)**:
+  first `ports/httpclient` consumer. `New(opts...)` over `*http.Client` with
+  STDLIB-PARITY defaults (Timeout 0, Transport nil, no tracing — pinned
+  white-box by `parity_internal_test.go`); `WithTimeout` (d<0 rejected, d==0
+  explicit no-timeout), `WithTransport` (nil rejected), `WithTracing(tp)`
+  opt-in explicit `trace.TracerProvider` injection via
+  `otelhttp.NewTransport(base, WithTracerProvider(tp))` — NO otel-global
+  fallback; sentinels errorsx-coded `CodeInvalidArgument` (`"stdhttp: "`
+  prefix); `Do` errors stdlib passthrough (never coded; gosec G704 suppressed
+  by-design); `Contextual()` wrapper implements `ContextualClient`
+  (method-name collision makes single-type dual-implementation impossible).
+  Tests all `httptest`-based (no CI integration leg): roundtrip, timeout,
+  default-no-timeout, ctx-cancel, Contextual-attach, span-on (injected
+  provider, exact-count 1), span-off (decoy provider, 0), 4 constructor
+  guards, white-box parity. Dependency: otelhttp v0.61.0 promoted
+  indirect→direct (only go.mod change).
+- **Reviews**: per-task subagent reviews all Approved (1 lint-fix wave at T8:
+  3 errcheck + 1 gosec); final whole-branch review (fable) NOT READY → 2
+  Important fixed (`e85f5c1`: README latest-release promotion/demotion +
+  white-box parity test) → re-review READY TO MERGE (14/14 -race, lint 0).
+- **Deferred (spec §8, do not re-litigate without new evidence)**: retry,
+  circuit breaker, `ports/resilience`, per-request options, `httpclienttest`
+  conformance suite, `cache/ristretto` (must first verify async-Set
+  visibility vs cachetest determinism).
+- Branches deleted: `feat/cache-redis-healthcheck`, `feat/httpclient-std`,
+  core `docs/httpclient-godoc`.
 
 ## v0.11.0 cache/redis cycle (CLOSED — shipped + tagged 2026-07-02)
 

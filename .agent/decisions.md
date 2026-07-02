@@ -1081,3 +1081,30 @@ pseudo-version content for any cycle where intervening commits exist.
   (`2c10eba`) at the pseudo-pin, CI 5/5 green; core `v0.12.0` tagged
   (`12714d0`); adapter dep-bump PR #34 merged CI 5/5 (`050a99a`); adapter
   `v0.11.0` annotated at `050a99a` + pushed + GitHub Release Latest.
+
+## httpclient/std (stdhttp) v0.12.0 (2026-07-02 cycle)
+
+- **Stdlib-parity defaults, no safe-default override**: default timeout is 0
+  (= zero-value net/http.Client). An adapter named `std` must not silently
+  diverge from stdlib; production timeout is RECOMMENDED in package doc but
+  never decided for the caller. WithTimeout: d<0 constructor error, d==0
+  explicit no-timeout, d>0 sets. Pinned white-box (parity_internal_test.go:
+  Timeout==0 && Transport==nil after New()).
+- **Tracing is opt-in with explicit provider injection**: WithTracing(tp
+  trace.TracerProvider); nil → ErrNilTracerProvider. No otel-global fallback
+  (repo convention: observability/otel registers no globals). otelhttp's
+  propagator/meter defaults still read otel globals (noop here) — spec-
+  prescribed; revisit only under spec §8 per-request options.
+- **Client/ContextualClient cannot share one concrete type** (same method
+  name `Do`, different signatures) — ContextualClient is served by the
+  `Contextual()` wrapper doing req.WithContext(ctx), no added semantics.
+- **Do errors are stdlib passthrough, never errorsx-coded** — the port
+  contract is explicitly net/http-shaped. gosec G704 on the forward is
+  suppressed inline as by-design.
+- **Simplified tag-gate (first use)**: ports/httpclient published since core
+  v0.1.0 and no core API change → no core tag, no dep-bump PR; impl PR merge
+  → adapter tag directly. Core godoc fix merged UNTAGGED (no published-content
+  contradiction, unlike the v0.11.0 TypedCache incident).
+- **cache/redis HealthCheck export**: method form (reuses New's client
+  guard); empty name → "cache-redis"; Ping errors uncoded. Shipped as its own
+  small PR #35 BEFORE the main cycle (scope isolation per user decision).
