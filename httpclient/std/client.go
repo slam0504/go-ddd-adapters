@@ -46,6 +46,7 @@ func New(opts ...Option) (*Client, error) {
 // are stdlib passthrough (*url.Error etc.), never re-coded — the port
 // contract is explicitly net/http-shaped.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	//nolint:gosec // G704: a general-purpose HTTP client forwards caller-constructed requests by design (ports/httpclient contract)
 	return c.hc.Do(req)
 }
 

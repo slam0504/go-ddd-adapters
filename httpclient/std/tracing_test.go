@@ -24,7 +24,7 @@ func doOK(t *testing.T, c *stdhttp.Client, url string) {
 	}
 	// otelhttp ends the client span when the body is fully consumed + closed.
 	_, _ = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 // WithTracing(tp) must emit a client span per request through the injected
