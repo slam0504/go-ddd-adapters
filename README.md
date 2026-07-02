@@ -143,6 +143,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.12.0` | `v0.12.0` | `>= 1.25` |
 | `v0.11.0` | `v0.12.0` | `>= 1.25` |
 | `v0.10.0` | `v0.10.0` | `>= 1.25` |
 | `v0.9.0` | `v0.9.0` | `>= 1.25` |
