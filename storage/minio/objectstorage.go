@@ -104,7 +104,7 @@ func (s *Storage) List(ctx context.Context, opts storage.ListOptions) (storage.L
 			// Get/Stat only.
 		})
 	}
-	if err := ctx.Err(); err != nil && len(page.Objects) < opts.Limit {
+	if err := ctx.Err(); err != nil {
 		// Iterator may end early because ctx was cancelled mid-walk.
 		return storage.ListPage{}, errorsx.Wrap(errorsx.CodeUnavailable, "miniostorage: list interrupted", err)
 	}
