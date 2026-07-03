@@ -1,16 +1,59 @@
 # go-ddd-adapters State
 
-Last verified: 2026-07-02 Asia/Taipei (on `main` `16d517d` — `httpclient/std`
-cycle CLOSED + tagged). Source: `git log main --oneline` head is `16d517d`
-(`Merge pull request #36 from slam0504/feat/httpclient-std`). Adapter
-**`v0.12.0`** annotated tag at `16d517d`, pushed; GitHub Release Latest
-(draft:false prerelease:false; verified via `releases/latest` API). Both
-`go.mod` files require `go-ddd-core v0.12.0` (pin UNCHANGED this cycle);
-`go list -m go-ddd-adapters@v0.12.0` resolves via proxy. SIMPLIFIED gate this
-cycle (first of its kind): `ports/httpclient` was published since core v0.1.0,
-so NO core tag and NO dep-bump PR — impl PR #36 merged → adapter `v0.12.0`
-tag + Release directly. Adapter/core version coincide at v0.12.0 by accident,
-not by policy (alignment remains dropped since the v0.11.0 incident).
+Last verified: 2026-07-03 Asia/Taipei (on `main` `ec40247` — durable-inbox
+cycle CLOSED + tagged). Source: `git log main --oneline` head is `ec40247`
+(`Merge pull request #38 from slam0504/chore/bump-core-v0.13.0`). Adapter
+**`v0.13.0`** annotated tag at `ec40247`, pushed; GitHub Release Latest
+(verified via `releases/latest` API). Both `go.mod` files require
+`go-ddd-core v0.13.0`; `go list -m go-ddd-adapters@v0.13.0` resolves via
+proxy. FULL four-step gate this cycle (core contract changed): impl PR #37
+at pseudo-pin → core `v0.13.0` (core PRs #36 untagged-merge + #37
+release-prep, tag @ core main) → dep-bump PR #38 (`ec40247`) → adapter
+`v0.13.0` tag + Release. Adapter/core coincide at v0.13.0 by accident
+(alignment remains dropped since the v0.11.0 incident).
+
+## v0.13.0 eventbus/inbox/pgx cycle (CLOSED — shipped + tagged 2026-07-03)
+
+Durable Postgres inbox; closed the examples/orders README durable-inbox /
+consumer-side-dedup correctness shortcut. Spec/plan
+`docs/superpowers/{specs/2026-07-02-eventbus-inbox-pgx-design,plans/2026-07-03-eventbus-inbox-pgx}.md`.
+
+- **Phase A (core, PR #36 merge `3244442` untagged → tag v0.13.0 via
+  release-prep PR #37)**: `eventbus.ErrAlreadyRecorded` sentinel; Inbox
+  godoc matured (duplicate `Record` = error NEVER silent success incl.
+  commit-time conflicts; `Seen` demoted to advisory fast-path; validation
+  precedence empty Consumer/EventID → `CodeInvalidArgument` before ctx
+  before backend); `eventbus/inboxtest.RunContract` 9 deterministic
+  subtests + test-only reference impl, red-proven ×3.
+- **Phase B (adapters PR #37 merge `ef1ca72`)**: `eventbus/inbox/pgx`
+  (`pgxinbox`) — plain `INSERT` + `(consumer,event_id)` PK; 23505 → wrapped
+  `ErrAlreadyRecorded` (deliberately NOT `ON CONFLICT DO NOTHING` — the
+  blocking INSERT IS the exactly-once transactional guard, proven by a
+  concurrent-race integration test: loser blocks until winner commits, then
+  rolls back); ambient-tx join via `pgxdb.Executor`; migrations dir + embed
+  `FS` (mirrors outbox/pgx); v1 limitation: unbounded growth, `recorded_at`
+  reserves cleanup path. **BREAKING**: `Memory` duplicate `Record` no-op →
+  `ErrAlreadyRecorded`; `WithTTL` precise (within-window duplicate errors,
+  expired entry re-recordable); Memory passes RunContract. CI leg appended.
+- **Phase C (examples/orders, same PR)**: `workerflow.JoiningUnitOfWork`
+  (examples-local; joins ambient `pgxdb.TxFromContext` tx else `WithinTx` —
+  designed around the CONFIRMED constraint that `TxManager.WithinTx` never
+  joins) + `HandleOrderPlacedOnce` single per-message tx (Seen fast-path →
+  ship+Stage → Record; `ErrAlreadyRecorded` → rollback → ack; no
+  error-swallowing path); `inbox-migrate` compose service
+  (`inbox_schema_migrations`); e2e duplicate-delivery test proves 1 outbox
+  row + 1 inbox row; consumer name const `"orders-worker"`.
+- **Reviews**: 10 impl tasks via subagent-driven-development, all per-task
+  reviews Approved (T9's two verify-then-adapt: stubTx marker replaces
+  WithTx(ctx,nil) — nil-in-interface makes TxFromContext ok=false; logger
+  package-level API). Final whole-branch review (fable): READY TO MERGE,
+  0 Critical/Important; 3 doc minors rode dep-bump PR #38 (godoc
+  "pre-v0.13.0"→"earlier releases"; embed.go dangling doc.go ref; README
+  consume-side/publish-side qualifiers). Core follow-up candidate recorded:
+  inboxtest PerEventIsolation positive-Seen assertion + Seen-ordering leg
+  of EmptyKeyPrecedesCancelledCtx.
+- Branches deleted: `feat/inbox-pgx`, `chore/bump-core-v0.13.0`, core
+  `feat/inbox-maturation`, core `release/v0.13.0-prep`.
 
 ## v0.12.0 httpclient/std cycle (CLOSED — shipped + tagged 2026-07-02)
 

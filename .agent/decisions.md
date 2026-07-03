@@ -1108,3 +1108,31 @@ pseudo-version content for any cycle where intervening commits exist.
 - **cache/redis HealthCheck export**: method form (reuses New's client
   guard); empty name → "cache-redis"; Ping errors uncoded. Shipped as its own
   small PR #35 BEFORE the main cycle (scope isolation per user decision).
+
+## eventbus/inbox/pgx durable inbox v0.13.0 (2026-07-03 cycle)
+
+- **Duplicate Record is an ERROR, never silent success** (core contract,
+  BREAKING for Memory): silent success cannot roll the caller's transaction
+  back, which defeats the exactly-once guard. This is why pgx Record is a
+  plain INSERT and NOT `ON CONFLICT DO NOTHING` — the 23505 surfaces
+  (possibly only at winner-commit time under concurrency) and rolls the
+  loser's tx back. Seen is demoted to advisory fast-path.
+- **Contract pinned in core BEFORE the adapter** (cache-cycle precedent):
+  the incumbent Memory no-op semantics contradicted what pgx needs; the
+  conflict was settled in core Phase A (sentinel + godoc + inboxtest), not
+  discovered mid-adapter.
+- **Joining UoW lives in examples, core untouched**: CONFIRMED constraint —
+  `pgxdb.TxManager.WithinTx` always `pool.BeginTx` (never joins ambient);
+  `UnitOfWorkFromTxManager` is a thin passthrough; `ShipOrderHandler` opens
+  `uow.Do` internally. Solution: `workerflow.JoiningUnitOfWork` checks
+  `pgxdb.TxFromContext` first. Note: `WithTx(ctx, nil)` does NOT create an
+  ambient-tx marker (nil-in-interface → TxFromContext ok=false).
+- **Memory WithTTL precise semantics**: within-window duplicate →
+  `ErrAlreadyRecorded`; expired entry re-recordable (fresh timestamp,
+  window restarts) — anything else would nullify WithTTL.
+- **Retention deferred (v1 unbounded growth)**: documented limitation in
+  adapter doc + examples README; `recorded_at` column reserves the future
+  cleanup-migration path.
+- **Core follow-up candidates** (from final review, non-blocking):
+  inboxtest PerEventIsolation positive-Seen assertion; Seen-ordering leg
+  of EmptyKeyPrecedesCancelledCtx; Memory eviction-re-record intent test.
