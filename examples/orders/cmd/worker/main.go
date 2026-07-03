@@ -20,8 +20,10 @@ import (
 	"github.com/slam0504/go-ddd-core/eventbus"
 	"github.com/slam0504/go-ddd-core/ports/logger"
 
+	pgxinbox "github.com/slam0504/go-ddd-adapters/eventbus/inbox/pgx"
 	"github.com/slam0504/go-ddd-adapters/eventbus/kafka"
 	pgxoutbox "github.com/slam0504/go-ddd-adapters/eventbus/outbox/pgx"
+
 	apporder "github.com/slam0504/go-ddd-adapters/examples/orders/application/order"
 	"github.com/slam0504/go-ddd-adapters/examples/orders/cmd/internal/runtime"
 	orderdom "github.com/slam0504/go-ddd-adapters/examples/orders/domain/order"
@@ -79,8 +81,13 @@ func run() error {
 	}
 
 	txMgr := pgxdb.NewTxManager(pool)
-	uow := application.UnitOfWorkFromTxManager(txMgr)
+	uow := workerflow.JoiningUnitOfWork(txMgr)
 	repo := pgxrepo.New(pool)
+
+	ibx, err := pgxinbox.New(pool)
+	if err != nil {
+		return fmt.Errorf("pgxinbox: %w", err)
+	}
 
 	sub, err := newSubscriber(brokers, codec)
 	if err != nil {
@@ -92,8 +99,11 @@ func run() error {
 	// kafka.ConsumerModule's handle returns error — nil means Ack,
 	// non-nil means Nack. Do NOT call env.Ack/Nack manually; the
 	// adapter owns ack lifecycle based on the return value.
+	// HandleOrderPlacedOnce wraps the handler in a per-message transaction
+	// with durable inbox dedup: Seen → ship+Stage (handler uow JOINS the outer
+	// tx via JoiningUnitOfWork) → Record; ErrAlreadyRecorded rolls back and acks.
 	handle := func(hctx context.Context, env eventbus.Envelope) error {
-		return workerflow.HandleOrderPlaced(hctx, log, cmdBus, env)
+		return workerflow.HandleOrderPlacedOnce(hctx, log, txMgr, ibx, cmdBus, env)
 	}
 
 	// Stop order (reverse Use): ConsumerModule drains in-flight handlers

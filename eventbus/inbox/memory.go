@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/slam0504/go-ddd-core/eventbus"
+	"github.com/slam0504/go-ddd-core/pkg/errorsx"
 )
 
 // Memory is a goroutine-safe in-memory Inbox. It records every seen
@@ -81,8 +82,15 @@ func NewMemory(opts ...MemoryOption) *Memory {
 
 // Seen reports whether key has been recorded. When WithTTL was set, an
 // entry recorded more than ttl ago reports false (the caller's handler
-// will be invoked again and may re-Record the key).
-func (m *Memory) Seen(_ context.Context, key eventbus.InboxKey) (bool, error) {
+// will be invoked again and may re-Record the key). Precedence: empty
+// key -> ctx -> store.
+func (m *Memory) Seen(ctx context.Context, key eventbus.InboxKey) (bool, error) {
+	if key.Consumer == "" || key.EventID == "" {
+		return false, errInvalidKey()
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	seenAt, ok := m.seenAt[key]
@@ -95,17 +103,27 @@ func (m *Memory) Seen(_ context.Context, key eventbus.InboxKey) (bool, error) {
 	return true, nil
 }
 
-// Record marks key as processed. On an already-seen key the behaviour
-// depends on TTL: if WithTTL is unset or the existing timestamp is still
-// within ttl, Record is a no-op (the original timestamp is preserved).
-// If the existing timestamp is older than ttl, the entry is overwritten
-// with the current time, restarting the dedup window.
-func (m *Memory) Record(_ context.Context, key eventbus.InboxKey) error {
+// Record marks key as processed. On an already-recorded key it returns
+// eventbus.ErrAlreadyRecorded — unless WithTTL is set and the existing
+// entry has expired, in which case the key is treated as not recorded and
+// is overwritten with a fresh timestamp (restarting the dedup window).
+// Precedence: empty key -> ctx -> store.
+//
+// BREAKING (vs pre-v0.13.0): duplicate Record used to be a silent no-op;
+// the matured eventbus.Inbox contract requires the error so transactional
+// callers can roll back.
+func (m *Memory) Record(ctx context.Context, key eventbus.InboxKey) error {
+	if key.Consumer == "" || key.EventID == "" {
+		return errInvalidKey()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if seenAt, ok := m.seenAt[key]; ok {
 		if m.ttl == 0 || m.now().Sub(seenAt) <= m.ttl {
-			return nil
+			return eventbus.ErrAlreadyRecorded
 		}
 		// expired — fall through to overwrite below
 	}
@@ -147,6 +165,10 @@ func (m *Memory) evictOldestHalf() {
 	for i := 0; i < cutoff; i++ {
 		delete(m.seenAt, all[i].key)
 	}
+}
+
+func errInvalidKey() error {
+	return errorsx.New(errorsx.CodeInvalidArgument, "inbox: empty consumer or event id")
 }
 
 var _ eventbus.Inbox = (*Memory)(nil)

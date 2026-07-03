@@ -152,12 +152,11 @@ tracked as its own follow-up.
   durable read store (Postgres / DynamoDB / Elasticsearch) with
   idempotent upserts. The pgx projection variant is a separate
   follow-up.
-- **No durable Inbox / consumer-side dedup.** At-least-once
-  redelivery from the broker can cause duplicate Ship dispatches
-  (the handler treats already-shipped as a graceful ack to absorb
-  this, but that's a workaround, not a real Inbox). A real service
-  uses `eventbus/inbox` keyed on `OutboxRecord.EventID`. The
-  `eventbus/inbox/pgx` adapter is a separate follow-up.
+- **`inbox_records` grows without bound.** The durable inbox is
+  wired and proven exactly-once by integration tests
+  (`TestWorker_DuplicateDelivery_ExactlyOnce`), but retention is
+  deferred. `recorded_at` reserves the cleanup path for a future
+  migration.
 - **No exactly-once claim.** At-least-once is the explicit contract
   of the pgx outbox adapter. `WithClaimLease(5s)` reduces the
   duplicate window but does not eliminate it.
