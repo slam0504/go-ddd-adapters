@@ -88,8 +88,11 @@ Pinned semantics:
 - `NextToken == ""` is the only termination signal. A page MAY be shorter
   than `Limit` while `NextToken` is non-empty (S3 `ListObjectsV2`
   semantics) — callers must not treat a short page as terminal.
-- `Token` is opaque; an invalid/expired token surfaces as a coded backend
-  error (adapter passthrough, never `CodeUnknown`).
+- `Token` is opaque and **adapter-owned**: the contract does not promise it
+  maps to any backend-native continuation token. An invalid token returns a
+  coded error, never `CodeUnknown`: a malformed adapter-owned token MAY be
+  `CodeInvalidArgument`; a backend-rejected token surfaces as a
+  backend/config/transport-class coded error.
 - Empty `Prefix` lists everything.
 - Backends may cap the effective page size below `Limit` (e.g. S3's 1000);
   each adapter documents its cap.
@@ -245,12 +248,21 @@ adapter-side with real HTTP (§6).
     `CodeInternal` alternative was considered and rejected because it
     connotes an adapter bug rather than an environment precondition.
   - All other backend errors → errorsx-coded, never `CodeUnknown`.
-- `List`: maps to S3 `ListObjectsV2` continuation tokens. Implementation
-  note (verify at plan time): minio-go's channel-based `ListObjects`
-  auto-paginates and hides tokens, so it is NOT suitable; the low-level
-  `minio.Core` API exposes `ListObjectsV2` with an explicit continuation
-  token. The exact call surface is confirmed against minio-go v7.2.1
-  during planning, not assumed here.
+- `List`: `ListPage.NextToken` is an **adapter-owned opaque token — NOT a
+  MinIO/S3 continuation token**. Rationale (verified against minio-go
+  v7.2.1 source): `minio.Core.ListObjectsV2` — the only surface exposing
+  the backend continuation token — takes no ctx parameter and internally
+  calls `listObjectsV2Query(context.Background(), ...)`, which would
+  violate the contract's ctx-cancellation responsibility (§3.6). v1
+  therefore uses the ctx-aware public API (`Client.ListObjectsIter` or
+  `Client.ListObjects(ctx, bucket, ListObjectsOptions{Prefix,
+  Recursive: true, MaxKeys, StartAfter})`; exact pick at plan time):
+  - The adapter token encodes the `StartAfter` key; the next page resumes
+    from it.
+  - To decide whether a next page exists, the implementation consumes up
+    to `Limit + 1` objects, returns the first `Limit`, and on lookahead
+    sets `NextToken` to the last RETURNED key.
+  - A malformed adapter token → `CodeInvalidArgument` (§3.1).
 - Metadata: sent as user metadata on Put; on Stat/Get the adapter strips
   the transport prefix (`X-Amz-Meta-*`) and canonicalizes keys to
   lowercase (§3.2).
@@ -267,8 +279,8 @@ adapter-side with real HTTP (§6).
 - Adapter-specific integration tests:
   - Presign end-to-end: `net/http` PUT through a presigned URL, then GET
     through a presigned URL, bytes compared.
-  - Pagination walk with more objects than one backend page (exercises a
-    real continuation token, not just the reference impl's).
+  - Pagination walk with more objects than one page (exercises a
+    multi-page walk through the adapter token against a real backend).
   - `NoSuchBucket` mapping: operations against a non-existent bucket →
     `CodeUnavailable`, NOT `errors.Is(_, ErrNotFound)`.
   - Metadata canonicalization intent test: mixed-case keys on Put come
@@ -311,3 +323,8 @@ adapter-side with real HTTP (§6).
    mutation; suite compares sets.
 8. `NoSuchBucket` → `CodeUnavailable` (not `ErrNotFound`, not
    `CodeInternal`).
+9. `List` token is adapter-owned (`StartAfter`-encoded, `Limit + 1`
+   lookahead), NOT a backend continuation token — pinned because
+   minio-go v7.2.1 `Core.ListObjectsV2` takes no ctx (internally
+   `context.Background()`), conflicting with the contract's ctx
+   responsibility; ctx-aware public list API used instead.
