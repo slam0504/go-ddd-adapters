@@ -109,9 +109,9 @@ func (m *Memory) Seen(ctx context.Context, key eventbus.InboxKey) (bool, error) 
 // is overwritten with a fresh timestamp (restarting the dedup window).
 // Precedence: empty key -> ctx -> store.
 //
-// BREAKING (vs pre-v0.13.0): duplicate Record used to be a silent no-op;
-// the matured eventbus.Inbox contract requires the error so transactional
-// callers can roll back.
+// BREAKING (vs earlier releases): duplicate Record used to be a silent
+// no-op; the matured eventbus.Inbox contract requires the error so
+// transactional callers can roll back.
 func (m *Memory) Record(ctx context.Context, key eventbus.InboxKey) error {
 	if key.Consumer == "" || key.EventID == "" {
 		return errInvalidKey()

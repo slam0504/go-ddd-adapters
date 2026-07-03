@@ -5,7 +5,7 @@
 // In production deployments callers should run these SQL files via their
 // own migration tooling (golang-migrate, goose, atlas, flyway, ...) —
 // the adapter does not ship a runtime Migrate API. See the package
-// doc.go in eventbus/inbox/pgx for guidance.
+// documentation of eventbus/inbox/pgx for guidance.
 package migrations
 
 import "embed"
