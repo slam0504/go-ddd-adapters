@@ -1,9 +1,10 @@
 # go-ddd-adapters State
 
-Last verified: 2026-07-03 Asia/Taipei (on `main` `ec40247` — durable-inbox
-cycle CLOSED + tagged). Source: `git log main --oneline` head is `ec40247`
-(`Merge pull request #38 from slam0504/chore/bump-core-v0.13.0`). Adapter
-**`v0.13.0`** annotated tag at `ec40247`, pushed; GitHub Release Latest
+Last verified: 2026-07-03 Asia/Taipei (durable-inbox cycle CLOSED + tagged).
+`main` head is `179e66e` (docs(agent) bookkeeping commit); the adapter
+**`v0.13.0`** annotated tag is at `ec40247` (`Merge pull request #38 from
+slam0504/chore/bump-core-v0.13.0`, the dep-bump merge), pushed; GitHub
+Release Latest
 (verified via `releases/latest` API). Both `go.mod` files require
 `go-ddd-core v0.13.0`; `go list -m go-ddd-adapters@v0.13.0` resolves via
 proxy. FULL four-step gate this cycle (core contract changed): impl PR #37

@@ -1,7 +1,8 @@
 # go-ddd-adapters Review Log
 
-Last verified: 2026-07-01 Asia/Taipei (post PR #31 merge at `e41d80a` —
-`ratelimit/redisrate` impl cycle findings recorded below)
+Last verified: 2026-07-03 Asia/Taipei (post durable-inbox cycle close at
+adapters `v0.13.0` `ec40247`; v0.12.0 + v0.13.0 review summaries recorded
+below)
 
 ## Recent Findings
 
@@ -206,7 +207,39 @@ Last verified: 2026-07-01 Asia/Taipei (post PR #31 merge at `e41d80a` —
   - CI 5/5 green on PR #33 (build+test, both golangci-lint, integration
     testcontainers vs `redis:7-alpine`).
 
+## v0.12.0 httpclient/std cycle review summary (2026-07-02)
+
+- 8 per-task reviews Approved (T1-T2 HealthCheck small PR; T4-T8 stdhttp).
+- T8 lint-fix wave: 3 errcheck body-close (repo `_ = resp.Body.Close()`
+  pattern) + 1 gosec G704 by-design suppression on Do's forward.
+- Controller-caught doc error: README HealthCheck attribution ("core v0.12.0
+  gained the method" — adapters-side; fixed `43a54cc`).
+- Final whole-branch review (fable): NOT READY -> 2 Important fixed
+  (`e85f5c1`): I1 README latest-release promotion/demotion drift; I2
+  stdlib-parity invariant white-box pin (`parity_internal_test.go`). Re-review
+  READY TO MERGE (14/14 -race, lint 0). M1 informational: otelhttp
+  propagator/meter defaults read otel globals (noop here; spec-prescribed).
+
+## v0.13.0 durable-inbox cycle review summary (2026-07-03)
+
+- 10 per-task reviews Approved (T1-T2 core contract+inboxtest; T3-T8
+  adapters; T9-T10 examples). T9 verify-then-adapt: `WithTx(ctx, nil)` cannot
+  mark an ambient tx (nil-in-interface -> TxFromContext ok=false; test uses
+  stubTx); logger is package-level API.
+- Final whole-branch review (fable): READY TO MERGE, 0 Critical/Important.
+  4 doc minors rode dep-bump PR #38: godoc "pre-v0.13.0"->"earlier releases";
+  embed.go dangling doc.go ref; examples README consume-side/publish-side
+  qualifiers; (M3 eviction-re-record intent test deferred, see below).
+- Accumulated minors triaged ACCEPT: race-test 300ms window (count assertion
+  still guards); Seen fast-path empty-tx commit; e2e lacks handler-invocation
+  counter (indirect falsification sufficient under last-write-wins).
+
 ## Current Open Review Items
 
-- None. (`cache/redis` impl + dep-bump merged; adapter `v0.11.0` tagged + GitHub
-  Release Latest. No open review findings.)
+- **Core follow-up candidates** (non-blocking, next core touch):
+  `inboxtest.PerEventIsolation` lacks positive Seen assertion;
+  `EmptyKeyPrecedesCancelledCtx` tests Record ordering only (not Seen).
+- **Adapters follow-up candidate**: Memory eviction-re-record intent test
+  (behavior trivially holds — eviction is a map delete — but unasserted).
+- Everything else closed: adapters `v0.13.0` + core `v0.13.0` tagged +
+  Release Latest; no open blocking findings.
