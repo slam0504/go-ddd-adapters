@@ -1136,3 +1136,40 @@ pseudo-version content for any cycle where intervening commits exist.
 - **Core follow-up candidates** (from final review, non-blocking):
   inboxtest PerEventIsolation positive-Seen assertion; Seen-ordering leg
   of EmptyKeyPrecedesCancelledCtx; Memory eviction-re-record intent test.
+
+## storage/minio ObjectStorage v0.14.0 (2026-07-03 cycle)
+
+- **List token is an adapter-owned StartAfter cursor, NEVER an S3
+  continuation token**: `minio.Core.ListObjectsV2` (the token-level API)
+  takes no ctx — using it would violate the ctx-responsibility constraint.
+  `ListObjectsIter(lctx, ...WithStartAfter)` + `Limit+1` lookahead instead;
+  `NextToken` = last returned key (positional — a deleted-between-pages
+  cursor key still positions correctly). "Malformed token →
+  CodeInvalidArgument" is vacuously satisfied: every string is a valid
+  StartAfter cursor (documented in code).
+- **`storage.ErrNotFound` uncoded sentinel, NoSuchKey ONLY**: NoSuchBucket
+  is `CodeUnavailable` (deployment/config failure) — a missing bucket must
+  never read as a missing object. Bucket pre-exists; `New` never creates it
+  and never dials.
+- **minio-go `InvalidArgument` → `CodeInvalidArgument`** (final-review fix
+  c478403): empirically probed — the client-side 7-day presign cap fails
+  deterministically with `ErrorResponse.Code == "InvalidArgument"`; the
+  catch-all `CodeUnavailable` would make retry middleware retry a failure
+  that can never succeed. "Never CodeUnknown" still holds.
+- **List ctx-cancel guard must not be masked by a full page** (fix 0e67063,
+  plan-example code overridden by controller adjudication): post-loop check
+  is `ctx.Err() != nil` alone — the plan's `&& len < Limit` clause silently
+  returned a false "last page" when cancellation coincided with exactly
+  Limit objects; the plan's own intent comment governs.
+- **Get forces `Stat()` at call time**: minio-go readers are lazy; without
+  it, missing objects surface at first `Read` instead of at `Get` (contract
+  pins read-at-call). Reader closed on the Stat-error path.
+- **go 1.26 bump rode this branch, not a separate cycle**: core merged its
+  1.26 floor (took core v0.14.0) before our pseudo-pin — `go 1.25.0`
+  go.mod would refuse the require. Storage maturation therefore shipped as
+  core v0.15.0; adapter/core version numbering diverges again (alignment
+  remains dropped).
+- **Core follow-up candidates** (non-blocking): plan doc says "12 subtests"
+  (suite has 13); ci.yml integration step still named "pgx adapter
+  integration tests" while covering 8 packages; storagetest
+  PutOverwriteWins discards io.ReadAll error.

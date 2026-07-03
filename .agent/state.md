@@ -1,17 +1,47 @@
 # go-ddd-adapters State
 
-Last verified: 2026-07-03 Asia/Taipei (durable-inbox cycle CLOSED + tagged).
-`main` head is `179e66e` (docs(agent) bookkeeping commit); the adapter
-**`v0.13.0`** annotated tag is at `ec40247` (`Merge pull request #38 from
-slam0504/chore/bump-core-v0.13.0`, the dep-bump merge), pushed; GitHub
-Release Latest
-(verified via `releases/latest` API). Both `go.mod` files require
-`go-ddd-core v0.13.0`; `go list -m go-ddd-adapters@v0.13.0` resolves via
-proxy. FULL four-step gate this cycle (core contract changed): impl PR #37
-at pseudo-pin → core `v0.13.0` (core PRs #36 untagged-merge + #37
-release-prep, tag @ core main) → dep-bump PR #38 (`ec40247`) → adapter
-`v0.13.0` tag + Release. Adapter/core coincide at v0.13.0 by accident
-(alignment remains dropped since the v0.11.0 incident).
+Last verified: 2026-07-03 Asia/Taipei (object-storage cycle CLOSED + tagged).
+`main` head is `9c94739` (`Merge pull request #40 from
+slam0504/chore/bump-core-v0.15.0`, the dep-bump merge); the adapter
+**`v0.14.0`** annotated tag is at `9c94739`, pushed; GitHub Release Latest
+(verified via `releases/latest` API, draft:false). Both `go.mod` files
+require `go-ddd-core v0.15.0`; `go list -m go-ddd-adapters@v0.14.0`
+resolves via proxy. FULL four-step gate this cycle (core contract changed):
+impl PR #39 (`daec586`) at pseudo-pin → core `v0.15.0` (core PR #40
+untagged-merge `15790cd` + release-prep PR #41, tag @ `59aa9a0`) → dep-bump
+PR #40 (`9c94739`, content-identity CLEAR: only CHANGELOG + .agent differ
+pseudo↔tag) → adapter `v0.14.0` tag + Release. **BREAKING (toolchain)**: go
+directive now `1.26.0` (core's go 1.26 floor took core v0.14.0, which is
+why storage maturation shipped as core v0.15.0 — adapter/core numbering
+diverges again).
+
+## v0.14.0 storage/minio cycle (CLOSED — shipped + tagged 2026-07-03)
+
+First `ports/storage.ObjectStorage` adapter. Spec/plan
+`docs/superpowers/{specs/2026-07-03-storage-minio-adapter-design,plans/2026-07-03-storage-minio-adapter}.md`.
+
+- **Phase A (core, PR #40 merge `15790cd` untagged → tag v0.15.0 via
+  release-prep PR #41 @ `59aa9a0`)**: matured `ports/storage` — BREAKING
+  token-paginated `List(ctx, ListOptions{Prefix,Token,Limit}) (ListPage,
+  error)` with adapter-owned opaque `NextToken`; `ObjectInfo.Metadata`
+  (lowercase portable keys); pinned semantics (overwrite Put, idempotent
+  Delete, caller-closes Get, uncoded `ErrNotFound` sentinel, arg→ctx→backend
+  precedence, opaque ETag); `storagetest.RunContract` 13 subtests +
+  in-memory reference impl (presign out of suite scope).
+- **Phase B (adapters PR #39 merge `daec586`)**: `storage/minio`
+  (`miniostorage`) over minio-go v7.2.1 — `New(client, bucket)` (bucket must
+  pre-exist, never created); `NoSuchKey` → `storage.ErrNotFound`,
+  `NoSuchBucket` → `CodeUnavailable`, `InvalidArgument` →
+  `CodeInvalidArgument` (final-review fix: minio-go tags the client-side
+  7-day presign cap as InvalidArgument — was dressed as retryable
+  Unavailable), all else `CodeUnavailable`, never `CodeUnknown`; List =
+  ctx-aware `ListObjectsIter` + `StartAfter` cursor + `Limit+1` lookahead
+  (NEVER `minio.Core.ListObjectsV2`); Get forces `Stat` at call (closes on
+  error path); metadata lowercase-canonicalized. Integration: 13/13
+  RunContract + presign e2e + 3-page walk + NoSuchBucket + metadata tests
+  `-race` vs real MinIO testcontainer (local + CI); CI leg appended. Also
+  carried: go 1.26 bump (go.mod ×2, CI ×3, lint action v2.12.2, Dockerfile).
+
 
 ## v0.13.0 eventbus/inbox/pgx cycle (CLOSED — shipped + tagged 2026-07-03)
 
