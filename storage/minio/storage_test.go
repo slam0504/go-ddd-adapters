@@ -74,4 +74,21 @@ func TestGuards_FireBeforeNetwork(t *testing.T) {
 	if _, err := s.PresignPut(ctx, "k", -time.Second); errorsx.CodeOf(err) != errorsx.CodeInvalidArgument {
 		t.Fatalf("PresignPut negative expires code = %v", errorsx.CodeOf(err))
 	}
+	if _, err := s.PresignGet(ctx, "", time.Minute); errorsx.CodeOf(err) != errorsx.CodeInvalidArgument {
+		t.Fatalf("PresignGet empty key code = %v", errorsx.CodeOf(err))
+	}
+	if _, err := s.PresignPut(ctx, "", time.Minute); errorsx.CodeOf(err) != errorsx.CodeInvalidArgument {
+		t.Fatalf("PresignPut empty key code = %v", errorsx.CodeOf(err))
+	}
+}
+
+func TestPresign_ExpiryOverSevenDaysIsInvalidArgument(t *testing.T) {
+	s, err := New(testClient(t), "bucket")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = s.PresignGet(context.Background(), "k", 8*24*time.Hour)
+	if errorsx.CodeOf(err) != errorsx.CodeInvalidArgument {
+		t.Fatalf("PresignGet 8-day expiry code = %v, want CodeInvalidArgument", errorsx.CodeOf(err))
+	}
 }

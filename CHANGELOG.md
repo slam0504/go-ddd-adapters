@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING (core):** this release consumes core's matured `ports/storage`
   (token-paginated `List`, `ObjectInfo.Metadata`, pinned semantics).
 
+### Changed
+
+- go directive bumped to `1.26.0` (module consumers now need go >= 1.26;
+  core pinned past its own go 1.26 floor bump).
+
 ## [v0.13.0] - 2026-07-03
 
 ### Added

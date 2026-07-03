@@ -13,8 +13,9 @@ import (
 
 // mapError translates a minio-go error into the contract's error model:
 // NoSuchKey wraps the uncoded storage.ErrNotFound sentinel; NoSuchBucket is
-// CodeUnavailable (a deployment/config failure, never ErrNotFound); every
-// other failure is errorsx-coded and never CodeUnknown.
+// CodeUnavailable (a deployment/config failure, never ErrNotFound);
+// InvalidArgument is CodeInvalidArgument (permanent caller mistake, e.g.
+// presign expiry > 7 days); every other failure is CodeUnavailable.
 func mapError(op string, err error) error {
 	if err == nil {
 		return nil
@@ -25,6 +26,8 @@ func mapError(op string, err error) error {
 		return fmt.Errorf("miniostorage: %s: %w", op, storage.ErrNotFound)
 	case "NoSuchBucket":
 		return errorsx.Wrap(errorsx.CodeUnavailable, "miniostorage: "+op+": bucket does not exist", err)
+	case "InvalidArgument":
+		return errorsx.Wrap(errorsx.CodeInvalidArgument, "miniostorage: "+op, err)
 	}
 	return errorsx.Wrap(errorsx.CodeUnavailable, "miniostorage: "+op, err)
 }
