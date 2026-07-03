@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `storage/minio` (`miniostorage`): first `ports/storage.ObjectStorage`
+  consumer, over minio-go v7.2.1 (MinIO / AWS S3 / S3-compatible).
+  Implements `ObjectStorage` + `PresignedURLer`. Adapter-owned `StartAfter`
+  list cursor with `Limit+1` lookahead (NOT an S3 continuation token —
+  minio-go's token-level API is not ctx-aware); `NoSuchKey` →
+  `storage.ErrNotFound` (uncoded sentinel), `NoSuchBucket` →
+  `CodeUnavailable` (never `ErrNotFound`); metadata keys canonicalized to
+  lowercase; bucket must pre-exist (`New` never creates it). Proven by
+  core's `storagetest.RunContract` against a real MinIO container in CI
+  plus presign/pagination/misconfiguration integration tests. Also note
+  the core BREAKING dependency: this release consumes core's matured
+  `ports/storage` (token-paginated `List`).
+
 ## [v0.13.0] - 2026-07-03
 
 ### Added
