@@ -226,8 +226,8 @@ github.com/shirou/gopsutil/v4 v4.26.3 h1:2ESdQt90yU3oXF/CdOlRCJxrP+Am1aBYubTMTfx
 github.com/shirou/gopsutil/v4 v4.26.3/go.mod h1:LZ6ewCSkBqUpvSOf+LsTGnRinC6iaNUNMGBtDkJBaLQ=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
-github.com/slam0504/go-ddd-core v0.14.1-0.20260703084338-15790cdc8648 h1:03szLGGQFrqgORwbyVsSBu+a3z1zx/M4SlC6gkaYbQc=
-github.com/slam0504/go-ddd-core v0.14.1-0.20260703084338-15790cdc8648/go.mod h1:vRa64hPZRgaze3znl+2AdABxSU2EhPP8vZsmRVLgRLU=
+github.com/slam0504/go-ddd-core v0.15.0 h1:Z9W6yRTTHJc4mPeKmCH8+t+MNIt4ThRFX8MiaFyd4LE=
+github.com/slam0504/go-ddd-core v0.15.0/go.mod h1:vRa64hPZRgaze3znl+2AdABxSU2EhPP8vZsmRVLgRLU=
 github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 h1:+jumHNA0Wrelhe64i8F6HNlS8pkoyMv5sreGx2Ry5Rw=
 github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8/go.mod h1:3n1Cwaq1E1/1lhQhtRK2ts/ZwZEhjcQeJQ1RuC6Q/8U=
 github.com/spf13/afero v1.15.0 h1:b/YBCLWAJdFWJTN9cLhiXXcD7mzKn9Dm86dNnfyQw1I=

@@ -9,7 +9,17 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.13.0` is the latest tagged release — the durable-inbox slice. The
+`v0.14.0` is the latest tagged release — the object-storage slice. The
+`storage/minio` adapter is the first consumer of core's matured
+`ports/storage` contract (token-paginated `List` with an adapter-owned
+`StartAfter` cursor, `ObjectInfo.Metadata` with lowercase portable keys,
+uncoded `ErrNotFound` sentinel), implementing `ObjectStorage` +
+`PresignedURLer` over minio-go v7 and proven by core's
+`storagetest.RunContract` against a real MinIO container in CI.
+**BREAKING (toolchain)**: the go directive is now `1.26.0` — consumers
+must build with go >= 1.26. Requires `go-ddd-core v0.15.0`.
+
+`v0.13.0` is the durable-inbox slice. The
 `eventbus/inbox/pgx` adapter is the first consumer of core's matured
 `eventbus.Inbox` contract (duplicate `Record` = `ErrAlreadyRecorded`, never
 silent): plain INSERT + primary-key guard makes the blocking INSERT the
@@ -155,6 +165,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.14.0` | `v0.15.0` | `>= 1.26` |
 | `v0.13.0` | `v0.13.0` | `>= 1.25` |
 | `v0.12.0` | `v0.12.0` | `>= 1.25` |
 | `v0.11.0` | `v0.12.0` | `>= 1.25` |
