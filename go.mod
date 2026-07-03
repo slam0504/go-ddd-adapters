@@ -15,6 +15,7 @@ require (
 	github.com/redis/go-redis/v9 v9.20.0
 	github.com/slam0504/go-ddd-core v0.14.1-0.20260703084338-15790cdc8648
 	github.com/testcontainers/testcontainers-go v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/minio v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.42.0
 	go.opentelemetry.io/otel v1.41.0
