@@ -23,6 +23,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 
+	pgxinboxmigs "github.com/slam0504/go-ddd-adapters/eventbus/inbox/pgx/migrations"
 	pgxoutboxmigs "github.com/slam0504/go-ddd-adapters/eventbus/outbox/pgx/migrations"
 
 	ordersmigs "github.com/slam0504/go-ddd-adapters/examples/orders/migrations"
@@ -85,6 +86,10 @@ func run(m *testing.M) int {
 
 	if err := applyMigrations(pgDSN, "outbox_schema_migrations", pgxoutboxmigs.FS); err != nil {
 		log.Printf("integration: outbox migrations: %v", err)
+		return 1
+	}
+	if err := applyMigrations(pgDSN, "inbox_schema_migrations", pgxinboxmigs.FS); err != nil {
+		log.Printf("integration: inbox migrations: %v", err)
 		return 1
 	}
 	if err := applyMigrations(pgDSN, "orders_schema_migrations", ordersmigs.FS); err != nil {
@@ -153,13 +158,13 @@ func applyMigrations(pgDSN, table string, srcFS embed.FS) error {
 	return nil
 }
 
-// truncate clears all three tables. Called by each test that needs a
-// clean slate. The two outbox tables and orders are TRUNCATEd together
-// in one statement so foreign keys (none today) wouldn't trip ordering.
+// truncate clears all write-side tables. Called by each test that needs a
+// clean slate. All tables are TRUNCATEd together in one statement so foreign
+// keys (none today) wouldn't trip ordering.
 func truncate(t *testing.T) {
 	t.Helper()
 	_, err := sharedPool.Exec(context.Background(),
-		`TRUNCATE orders, outbox_records, outbox_dead_letters RESTART IDENTITY`)
+		`TRUNCATE orders, outbox_records, outbox_dead_letters, inbox_records RESTART IDENTITY`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
