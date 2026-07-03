@@ -15,7 +15,6 @@ import (
 // NoSuchKey wraps the uncoded storage.ErrNotFound sentinel; NoSuchBucket is
 // CodeUnavailable (a deployment/config failure, never ErrNotFound); every
 // other failure is errorsx-coded and never CodeUnknown.
-// nolint:unused
 func mapError(op string, err error) error {
 	if err == nil {
 		return nil
@@ -34,7 +33,6 @@ func mapError(op string, err error) error {
 // headers (portable S3 surface) and minio-go's UserMetadata map (MinIO
 // servers), canonicalizing keys to lowercase per the contract's portable
 // metadata rule. Returns nil when no user metadata is present.
-// nolint:unused
 func canonicalMetadata(header http.Header, userMeta map[string]string) map[string]string {
 	out := map[string]string{}
 	const prefix = "X-Amz-Meta-"

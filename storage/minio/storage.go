@@ -32,7 +32,6 @@ func New(client *minio.Client, bucket string, opts ...Option) (*Storage, error) 
 	return s, nil
 }
 
-// nolint:unused
 func validateKey(key string) error {
 	if key == "" {
 		return errorsx.New(errorsx.CodeInvalidArgument, "miniostorage: empty key")
