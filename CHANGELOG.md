@@ -18,9 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CodeUnavailable` (never `ErrNotFound`); metadata keys canonicalized to
   lowercase; bucket must pre-exist (`New` never creates it). Proven by
   core's `storagetest.RunContract` against a real MinIO container in CI
-  plus presign/pagination/misconfiguration integration tests. Also note
-  the core BREAKING dependency: this release consumes core's matured
-  `ports/storage` (token-paginated `List`).
+  plus presign/pagination/misconfiguration integration tests.
+- **BREAKING (core):** this release consumes core's matured `ports/storage`
+  (token-paginated `List`, `ObjectInfo.Metadata`, pinned semantics).
 
 ## [v0.13.0] - 2026-07-03
 
