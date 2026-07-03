@@ -2,10 +2,12 @@ package inbox_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/slam0504/go-ddd-core/eventbus"
+	"github.com/slam0504/go-ddd-core/eventbus/inboxtest"
 
 	"github.com/slam0504/go-ddd-adapters/eventbus/inbox"
 )
@@ -36,15 +38,24 @@ func TestRecord_ThenSeenIsTrue(t *testing.T) {
 	}
 }
 
-func TestRecord_IsIdempotent(t *testing.T) {
+// TestRecord_DuplicateReturnsErrAlreadyRecorded guards the BREAKING change
+// from pre-v0.13.0: duplicate Record used to be a silent no-op. The matured
+// Inbox contract requires ErrAlreadyRecorded so transactional callers can
+// roll back. Size must still stay at 1 — the duplicate must not add a slot.
+func TestRecord_DuplicateReturnsErrAlreadyRecorded(t *testing.T) {
 	in := inbox.NewMemory()
-	for i := 0; i < 5; i++ {
-		if err := in.Record(context.Background(), key("c1", "evt-1")); err != nil {
-			t.Fatalf("Record #%d: %v", i, err)
-		}
+	ctx := context.Background()
+	k := key("c1", "evt-1")
+
+	if err := in.Record(ctx, k); err != nil {
+		t.Fatalf("first Record: %v", err)
 	}
+	if err := in.Record(ctx, k); !errors.Is(err, eventbus.ErrAlreadyRecorded) {
+		t.Fatalf("duplicate Record err = %v, want ErrAlreadyRecorded", err)
+	}
+	// Duplicate must not grow the map.
 	if got := in.Size(); got != 1 {
-		t.Fatalf("Size = %d, want 1", got)
+		t.Fatalf("Size = %d, want 1 after duplicate", got)
 	}
 }
 
@@ -251,6 +262,40 @@ func TestTTL_AndMaxSizeCompose(t *testing.T) {
 		if seen, _ := in.Seen(ctx, key("c1", id)); seen {
 			t.Fatalf("%q at age=10s with TTL=5s should be filtered out by TTL", id)
 		}
+	}
+}
+
+func TestMemory_RunContract(t *testing.T) {
+	inboxtest.RunContract(t, func(t *testing.T) eventbus.Inbox {
+		return inbox.NewMemory()
+	})
+}
+
+// TestMemory_TTL_DuplicateWithinWindowThenReRecordAfterExpiry verifies that
+// within the TTL window a duplicate Record surfaces ErrAlreadyRecorded, and
+// that once the entry expires the key is treated as not recorded so a fresh
+// Record succeeds — anything else would nullify WithTTL.
+func TestMemory_TTL_DuplicateWithinWindowThenReRecordAfterExpiry(t *testing.T) {
+	now := time.Date(2026, 7, 3, 0, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	m := inbox.NewMemory(inbox.WithTTL(time.Minute), inbox.WithClock(clock))
+	key := eventbus.InboxKey{Consumer: "c", EventID: "e"}
+	ctx := context.Background()
+
+	if err := m.Record(ctx, key); err != nil {
+		t.Fatalf("first Record: %v", err)
+	}
+	if err := m.Record(ctx, key); !errors.Is(err, eventbus.ErrAlreadyRecorded) {
+		t.Fatalf("duplicate within TTL: err = %v, want ErrAlreadyRecorded", err)
+	}
+
+	now = now.Add(2 * time.Minute) // expire the entry
+	seen, err := m.Seen(ctx, key)
+	if err != nil || seen {
+		t.Fatalf("Seen after expiry = (%v, %v), want (false, nil)", seen, err)
+	}
+	if err := m.Record(ctx, key); err != nil {
+		t.Fatalf("re-Record after expiry: %v, want nil (fresh recording)", err)
 	}
 }
 
