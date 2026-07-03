@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.13.0] - 2026-07-03
+
 ### Added
 - `eventbus/inbox/pgx` (`pgxinbox`): durable Postgres inbox — first adapter
   proving core's matured `eventbus.Inbox` contract. Plain `INSERT` +
@@ -474,7 +476,8 @@ are new packages or new exported symbols.
   registry will arrive in a later release alongside the realistic
   example service.
 
-[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/slam0504/go-ddd-adapters/compare/v0.13.0...HEAD
+[v0.13.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.12.0...v0.13.0
 [v0.12.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.11.0...v0.12.0
 [v0.11.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.10.0...v0.11.0
 [v0.10.0]: https://github.com/slam0504/go-ddd-adapters/compare/v0.9.0...v0.10.0

@@ -39,7 +39,7 @@ func TestRecord_ThenSeenIsTrue(t *testing.T) {
 }
 
 // TestRecord_DuplicateReturnsErrAlreadyRecorded guards the BREAKING change
-// from pre-v0.13.0: duplicate Record used to be a silent no-op. The matured
+// from earlier releases: duplicate Record used to be a silent no-op. The matured
 // Inbox contract requires ErrAlreadyRecorded so transactional callers can
 // roll back. Size must still stay at 1 — the duplicate must not add a slot.
 func TestRecord_DuplicateReturnsErrAlreadyRecorded(t *testing.T) {

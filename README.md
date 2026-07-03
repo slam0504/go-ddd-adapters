@@ -9,7 +9,17 @@ without re-inventing the plumbing.
 
 ## Status
 
-`v0.12.0` is the latest tagged release — the outbound HTTP slice. The `httpclient/std` adapter
+`v0.13.0` is the latest tagged release — the durable-inbox slice. The
+`eventbus/inbox/pgx` adapter is the first consumer of core's matured
+`eventbus.Inbox` contract (duplicate `Record` = `ErrAlreadyRecorded`, never
+silent): plain INSERT + primary-key guard makes the blocking INSERT the
+exactly-once transactional guard, and the examples/orders worker now
+consumes `OrderPlaced` exactly-once via a single per-message transaction.
+**BREAKING**: the in-process `Memory` inbox's duplicate `Record` now
+returns `ErrAlreadyRecorded` (was silent no-op). Requires
+`go-ddd-core v0.13.0`.
+
+`v0.12.0` adds the outbound HTTP slice. The `httpclient/std` adapter
 is the first concrete consumer of core's `ports/httpclient` contract,
 wrapping `*net/http.Client` with stdlib-parity defaults (no client-level
 timeout, no tracing) and opt-in explicit-provider OTel tracing via
@@ -144,6 +154,7 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 
 | `go-ddd-adapters` | `go-ddd-core` | Go |
 | --- | --- | --- |
+| `v0.13.0` | `v0.13.0` | `>= 1.25` |
 | `v0.12.0` | `v0.12.0` | `>= 1.25` |
 | `v0.11.0` | `v0.12.0` | `>= 1.25` |
 | `v0.10.0` | `v0.10.0` | `>= 1.25` |

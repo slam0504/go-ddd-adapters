@@ -152,13 +152,13 @@ tracked as its own follow-up.
   durable read store (Postgres / DynamoDB / Elasticsearch) with
   idempotent upserts. The pgx projection variant is a separate
   follow-up.
-- **`inbox_records` grows without bound.** The durable inbox is
-  wired and proven exactly-once by integration tests
-  (`TestWorker_DuplicateDelivery_ExactlyOnce`), but retention is
-  deferred. `recorded_at` reserves the cleanup path for a future
-  migration.
-- **No exactly-once claim.** At-least-once is the explicit contract
-  of the pgx outbox adapter. `WithClaimLease(5s)` reduces the
+- **`inbox_records` grows without bound.** The durable inbox
+  (consume-side dedup) is wired and proven exactly-once by
+  integration tests (`TestWorker_DuplicateDelivery_ExactlyOnce`),
+  but retention is deferred. `recorded_at` reserves the cleanup
+  path for a future migration.
+- **No exactly-once claim (publish side).** At-least-once is the
+  explicit contract of the pgx outbox adapter. `WithClaimLease(5s)` reduces the
   duplicate window but does not eliminate it.
 - **No authn/authz.** HTTP endpoints are wide open. Demo only.
 - **`orders.version` column is reserved for future optimistic
