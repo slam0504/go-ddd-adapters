@@ -1,8 +1,9 @@
 # eventbus/inbox/pgx — durable inbox design (core maturation + adapter + worker wiring)
 
 Date: 2026-07-02. Status: accepted (user-reviewed in-session).
-Closes the `examples/orders` README "no durable Inbox / consumer-side dedup"
-shortcut — the last correctness-class shortcut from the pgx outbox demo cycle.
+Closes the `examples/orders` README durable-inbox / consumer-side-dedup
+correctness shortcut. (Other documented limitations remain — reader
+in-memory projection, outbox at-least-once — see §7.)
 
 ## 1. Goal & context
 
