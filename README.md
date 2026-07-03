@@ -114,7 +114,8 @@ OpenTelemetry provider that already shipped in `v0.2.0`.
 | Adapter | Port | Backing tech |
 | --- | --- | --- |
 | `eventbus/kafka` | `eventbus.Publisher`, `eventbus.Subscriber`, `eventbus.Codec` | [watermill-kafka v3][wmk] (Sarama) |
-| `eventbus/inbox` | `eventbus.Inbox` | in-process map (`Memory`) with optional `WithMaxSize` and `WithTTL` eviction |
+| `eventbus/inbox` | `eventbus.Inbox` | in-process map (`Memory`) with optional `WithMaxSize` and `WithTTL` eviction; duplicate `Record` now returns `ErrAlreadyRecorded` (matured contract) |
+| `eventbus/inbox/pgx` | `eventbus.Inbox` | [pgx/v5][pgx] + Postgres; plain INSERT + PK guard (duplicate → `ErrAlreadyRecorded`), joins ambient tx via `pgxdb`; durable per-consumer dedup for multi-instance workers |
 | `eventbus/outbox` | `eventbus.Outbox`, `eventbus.OutboxStore`, `eventbus.Relay` | in-process `Memory` + polling `Relay` — **non-transactional test/dev adapter, not for production** |
 | `eventbus/outbox/pgx` | `eventbus.Outbox`, `eventbus.OutboxStore`, `outbox.DeadLetterRecorder` | [pgx/v5][pgx] + Postgres 12+; lease-based claim with `FOR UPDATE SKIP LOCKED`, separate `outbox_dead_letters` table, safe for multiple Relay instances |
 | `ports/database/pgx` | `database.TxManager` | [pgx/v5][pgx] pool + ctx-bound transaction handle (`pgxdb.WithTx` / `pgxdb.TxFromContext` / `pgxdb.Executor`) |

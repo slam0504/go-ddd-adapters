@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `eventbus/inbox/pgx` (`pgxinbox`): durable Postgres inbox — first adapter
+  proving core's matured `eventbus.Inbox` contract. Plain `INSERT` +
+  `(consumer, event_id)` primary key; duplicate surfaces as
+  `eventbus.ErrAlreadyRecorded` (never `ON CONFLICT DO NOTHING`); joins an
+  ambient pgx transaction via `pgxdb` ctx helpers. v1 limitation:
+  `inbox_records` grows without bound (`recorded_at` reserves the cleanup
+  path).
+- `examples/orders`: worker consumes `OrderPlaced` exactly-once per consumer
+  via a single per-message transaction (Seen → ship + outbox.Stage →
+  Record) using an examples-local joining UnitOfWork.
+
+### Changed
+- **BREAKING:** `eventbus/inbox` `Memory.Record` on an already-recorded key
+  now returns `eventbus.ErrAlreadyRecorded` (was silent no-op), per core's
+  matured Inbox contract. `WithTTL` is preserved precisely: within-window
+  duplicates error; an expired entry is re-recordable. Both methods now
+  validate empty `Consumer`/`EventID` (`CodeInvalidArgument`) and honour
+  ctx cancellation.
+
 ## [v0.12.0] - 2026-07-02
 
 ### Added
