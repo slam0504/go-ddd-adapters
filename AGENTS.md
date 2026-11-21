@@ -1,11 +1,10 @@
 # go-ddd-adapters Agent Memory Rules
 
-Paths written as `<workspace-root>/...` in this file and in `.agent/`
-refer to the directory that contains both `go-ddd-core` and
-`go-ddd-adapters` as sibling repos. Substitute your own layout when
-reading.
-
-Read `<workspace-root>/AGENTS.md` first for the shared Claude/Codex protocol.
+Durable agent memory for this repo lives entirely under `.agent/`
+(state, decisions, review log). Cross-repo coordination with
+`go-ddd-core` is recorded in each repo's own `.agent/state.md`
+and synchronised by the operator across sessions; there is no
+shared file outside either repository.
 
 ## Project Role
 
@@ -18,9 +17,7 @@ Keep technology-specific dependencies here, not in `go-ddd-core`.
 1. Read `.agent/state.md`.
 2. Read `.agent/decisions.md`.
 3. Read `.agent/review-log.md`.
-4. If work affects core contracts or releases, read
-   `<workspace-root>/.agent-memory/go-ddd.md`.
-5. Run:
+4. Run:
 
    ```sh
    git status --short
@@ -45,4 +42,7 @@ At the end of meaningful work, update:
 - `.agent/state.md`
 - `.agent/decisions.md` if a design is accepted or changed
 - `.agent/review-log.md` if CR findings were added or resolved
-- `<workspace-root>/.agent-memory/go-ddd.md` for cross-repo changes
+
+For cross-repo changes (release coordination with `go-ddd-core`),
+mirror the relevant state into the other repo's `.agent/state.md`
+during the same session — there is no shared file outside the repos.
