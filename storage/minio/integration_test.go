@@ -30,7 +30,10 @@ var bucketSeq atomic.Int64
 func startMinio(t *testing.T) *minio.Client {
 	t.Helper()
 	ctx := context.Background()
-	c, err := tcminio.Run(ctx, "minio/minio:RELEASE.2024-01-16T16-07-38Z")
+	// minio/minio on Docker Hub was removed upstream; use Chainguard's build,
+	// pinned by digest (RELEASE.2026-11-16T00-11-40Z). Its free tier only
+	// publishes :latest, so the digest is what makes this reproducible.
+	c, err := tcminio.Run(ctx, "cgr.dev/chainguard/minio@sha256:e9cf6b99c226e9539ed0f14b6f00e37b07da153c7ba1f4f8709c807574b471ec")
 	if err != nil {
 		t.Fatalf("start minio container: %v", err)
 	}
